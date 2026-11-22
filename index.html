@@ -16,333 +16,6 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
-<style>
-#fdGate{position:fixed;inset:0;z-index:1000;background:var(--bg,#F3F5F7);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:max(28px,env(safe-area-inset-top,0px)) 16px 28px}
-#fdGate[hidden]{display:none}
-#fdGate form{width:100%;max-width:400px;background:var(--panel,#fff);border:1px solid var(--line,#DDE2E8);border-radius:16px;padding:24px 20px;display:flex;flex-direction:column;gap:14px;margin-top:4vh;box-shadow:0 8px 30px rgba(20,30,50,.08)}
-#fdGate .gl{display:flex;align-items:center;gap:12px}
-#fdGate .gm{width:48px;height:48px;border-radius:12px;background:var(--accent,#1F5FBF);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;letter-spacing:.5px}
-#fdGate h2{margin:0;font-size:22px;color:var(--ink,#18212F)}
-#fdGate .gs{margin:0;color:var(--muted,#5E6A7B);font-size:14.5px;line-height:1.45}
-#fdGate label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:14px;color:var(--ink,#18212F)}
-#fdGate input{box-sizing:border-box;width:100%;font:inherit;font-size:16px;padding:12px;border-radius:10px;border:1px solid var(--line,#DDE2E8);background:var(--panel,#fff);color:var(--ink,#18212F);min-height:46px}
-#fdGate button{font:inherit;font-size:16px;min-height:48px;border-radius:10px;cursor:pointer;font-weight:700}
-#fdGate .go{background:var(--accent,#1F5FBF);color:#fff;border:0}
-#fdGate .go:disabled{opacity:.6}
-#fdGate .alt{background:transparent;border:1px solid var(--line,#DDE2E8);color:var(--ink,#18212F);font-weight:600}
-#fdGate .gmsg{margin:0;font-size:14.5px;line-height:1.45;color:var(--ink,#18212F);min-height:1em}
-#fdGate .gmsg.err{color:#B42318}
-#fdGate [hidden]{display:none!important}
-#fdHome{position:fixed;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom,0px));z-index:900;background:var(--ink,#18212F);color:var(--bg,#fff);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.4;display:flex;gap:10px;align-items:center}
-#fdHome[hidden]{display:none}
-#fdHome button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
-</style>
-<div id="fdGate" hidden>
-  <form id="fdForm" novalidate>
-    <div class="gl"><div class="gm" aria-hidden="true">FD</div><h2 id="fdTitle">Family Docket</h2></div>
-    <p class="gs" id="fdSub"></p>
-    <label id="fdNameW" hidden>Your name<input id="fdName" type="text" maxlength="60" autocomplete="name" placeholder="First and last name"></label>
-    <label id="fdEmailL">Email<input id="fdEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
-    <label id="fdPassL">Password<input id="fdPass" type="password" autocomplete="current-password"></label>
-    <label id="fdPass2W" hidden>Confirm password<input id="fdPass2" type="password" autocomplete="new-password"></label>
-    <label id="fdCodeW" hidden>Code from your email<input id="fdCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></label>
-    <p class="gmsg" id="fdMsg" role="status" aria-live="polite"></p>
-    <button type="submit" class="go" id="fdGo">Sign in</button>
-    <button type="button" class="alt" id="fdResend" hidden>Send a new code</button>
-    <button type="button" class="alt" id="fdSwap">Create an account</button>
-  </form>
-</div>
-<div id="fdHome" hidden><span style="flex:1">You're in. To open it like an app: tap <b>Share</b>, then <b>Add to Home Screen</b>.</span><button type="button" id="fdHomeX">OK</button></div>
-<script>
-/* Family Docket, Google version: connects the app to the family list kept in Google, and handles signing in.
-   It gives the app the same small set of tools the Claude version has (saved items, photos, saving a file). */
-(function () {
-  "use strict";
-  var REMOTE = "https://script.google.com/macros/s/AKfycbxgMcpcNNZ6Lg9RGopK_7vn7_Gu6uU64f29OJiraBbO8ZWn3zlL4X6wHXMbs36ReGWAEg/exec", URLKEY = "__DEVICE_KEY__", JOIN = "__JOIN_KEY__", APP_URL = "__APP_URL__";
-  function real(v) { return /^__[A-Z_]+__$/.test(v) ? "" : v; }
-  REMOTE = real(REMOTE); URLKEY = real(URLKEY).replace(/[^a-f0-9]/g, ""); JOIN = real(JOIN); APP_URL = real(APP_URL);
-  var params = new URLSearchParams(location.search);
-  if (!JOIN) JOIN = (params.get("join") || "").replace(/[^a-z0-9]/g, "");
-  var KEEP = "fd-key", JK = "fd-join";
-  function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k) || ""; if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return ""; } }
-  if (JOIN) ls(JK, JOIN); else JOIN = ls(JK);
-  var TOKEN = URLKEY || ls(KEEP);
-  window.FD_GOOGLE = true;
-  var $ = function (id) { return document.getElementById(id); };
-
-  /* ---------- talking to Google ---------- */
-  function send(req) {
-    return new Promise(function (res, rej) {
-      var done = function (r) { r && r.ok ? res(r) : rej(r || { error: "failed" }); };
-      if (REMOTE) {
-        fetch(REMOTE, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(req), redirect: "follow" })
-          .then(function (r) { return r.json(); }).then(done, function () { rej({ error: "network" }); });
-      } else if (window.google && google.script && google.script.run) {
-        google.script.run.withSuccessHandler(done).withFailureHandler(function () { rej({ error: "network" }); }).api(req);
-      } else rej({ error: "network" });
-    });
-  }
-  function call(action, extra) { return send(Object.assign({ action: action, token: TOKEN }, extra || {})); }
-
-  /* ---------- the family list, kept here and refreshed from Google ---------- */
-  var cache = {}, listeners = [], loaded = false, pending = 0, ready, readyRes;
-  ready = new Promise(function (r) { readyRes = r; });
-  function snap(col) {
-    var docs = Object.keys(cache).filter(function (id) { return cache[id].col === col; })
-      .map(function (id) { var d = cache[id].data; return { id: id, data: function () { return d; } }; });
-    return { docs: docs, metadata: { fromCache: false } };
-  }
-  function fire() { listeners.forEach(function (l) { try { l.cb(snap(l.col)); } catch (e) {} }); }
-  function take(r) {
-    var c = {}; (r.items || []).forEach(function (x) { if (x && x.data && x.data.id) c[x.data.id] = { col: x.col, data: x.data }; });
-    cache = c; window.FD_LINKS = r.links || null; window.FD_ME = (r.me && r.me.email) || ""; window.FD_ROLE = (r.me && r.me.role) || "";
-  }
-  function load(quiet) {
-    return call("load").then(function (r) {
-      if (pending) return;        // a save is on its way; the next refresh picks it up
-      take(r); loaded = true; fire(); readyRes(true);
-    }, function (e) { if (e && e.error === "signin") signedOut("Please sign in again."); else if (!quiet) readyRes(true); });
-  }
-  setInterval(function () { if (loaded && document.visibilityState === "visible") load(true); }, 45000);
-  document.addEventListener("visibilitychange", function () { if (loaded && document.visibilityState === "visible") load(true); });
-  var chain = Promise.resolve();
-  function write(req, apply) {
-    apply(); fire(); pending++;
-    var p = chain.then(function () { return call(req.action, req); });
-    chain = p.then(function () {}, function () {});
-    return p.then(function () { pending--; }, function (e) {
-      pending--;
-      if (e && e.error === "signin") { signedOut("Please sign in again."); }
-      var err = new Error("save failed"); err.code = e && e.error === "denied" ? "invalid_argument" : "unavailable"; throw err;
-    });
-  }
-  var db = {
-    collection: function (col) {
-      return {
-        doc: function (id) {
-          return {
-            set: function (d) { return write({ action: "saveItem", col: col, id: id, data: d }, function () { cache[id] = { col: col, data: Object.assign({}, d, { id: id }) }; }); },
-            delete: function () { return write({ action: "deleteItem", col: col, id: id }, function () { if (cache[id] && cache[id].col === col) delete cache[id]; }); },
-            get: function () { var x = cache[id]; return Promise.resolve({ exists: !!(x && x.col === col), data: function () { return x ? x.data : null; } }); }
-          };
-        },
-        onSnapshot: function (cb) { var l = { col: col, cb: cb }; listeners.push(l); if (loaded) setTimeout(function () { cb(snap(col)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; }
-      };
-    },
-    doc: function () { return { get: function () { return Promise.resolve({ exists: false, data: function () { return null; } }); }, set: function () { return Promise.resolve(); } }; }
-  };
-
-  /* ---------- photos: kept in Google, shown from here ---------- */
-  var photos = {}, asking = {};
-  var MARK = "data:,fdp-";
-  window.__fdBlobUrl = function (id) { if (photos[id]) return photos[id]; getPhoto(id); return MARK + id; };
-  function getPhoto(id) {
-    if (asking[id] || photos[id] || !/^[a-f0-9]{32}$/.test(id)) return;
-    asking[id] = 1;
-    call("getPhoto", { id: id }).then(function (r) { photos[id] = r.data; fix(); }, function () { setTimeout(function () { delete asking[id]; }, 15000); });
-  }
-  function fix() {
-    document.querySelectorAll('img[src^="' + MARK + '"], a[href^="' + MARK + '"]').forEach(function (n) {
-      var attr = n.tagName === "A" ? "href" : "src", id = n.getAttribute(attr).slice(MARK.length);
-      if (photos[id]) n.setAttribute(attr, photos[id]); else getPhoto(id);
-    });
-  }
-  var fixQueued = false;
-  new MutationObserver(function () { if (fixQueued) return; fixQueued = true; requestAnimationFrame(function () { fixQueued = false; fix(); }); })
-    .observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src", "href"] });
-  function shrink(file) {
-    return new Promise(function (res, rej) {
-      var url = URL.createObjectURL(file), img = new Image();
-      img.onload = function () {
-        var k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight, 1)), c = document.createElement("canvas");
-        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
-        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
-        res(c.toDataURL("image/jpeg", 0.82));
-      };
-      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error("not a picture")); };
-      img.src = url;
-    });
-  }
-  var assets = {
-    upload: function (file) {
-      return shrink(file).then(function (data) {
-        return call("savePhoto", { data: data }).then(function (r) { photos[r.id] = data; return { id: r.id, url: data, sizeBytes: data.length, contentType: "image/jpeg" }; });
-      });
-    },
-    list: function () { return Promise.resolve({ assets: [], usage: {} }); },
-    delete: function () { return Promise.resolve(); }
-  };
-  var downloads = {
-    save: function (o) {
-      var blob = o.data instanceof Blob ? o.data : new Blob([o.data], { type: /\.ics$/i.test(o.filename) ? "text/calendar" : "application/octet-stream" });
-      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = o.filename || "file";
-      document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-      return Promise.resolve();
-    }
-  };
-  var user = { canEdit: function () { return Promise.resolve(true); }, isOwner: function () { return Promise.resolve(window.FD_ROLE === "owner"); }, can: function () { return Promise.resolve(true); } };
-  window.claude = {
-    use: function (name) {
-      if (name === "db") return ready.then(function () { return loaded ? db : null; });
-      if (name === "assets") return ready.then(function () { return loaded ? assets : null; });
-      if (name === "downloads") return Promise.resolve(downloads);
-      if (name === "user") return Promise.resolve(user);
-      return Promise.resolve(null);   // the Claude-only extras (smart reading, Gmail) are not in this version
-    }
-  };
-
-
-  /* ---------- reading a card photo: Google's free text reader (no AI) ---------- */
-  function blobToData(b) { return shrink(b); }
-  window.__fdReadCard = function (blobs) {
-    return Promise.all(blobs.slice(0, 2).map(blobToData)).then(function (imgs) {
-      return call("readCard", { images: imgs });
-    }).then(function (r) {
-      var c = r.card || {};
-      if (!c.issuer && !c.memberId && !c.group) { var e = new Error("unread"); e.code = "unread"; throw e; }
-      return c;
-    });
-  };
-
-  /* ---------- Ask Claude: requests answered by Elliot's Claude on his computer ---------- */
-  var KINDS = [
-    ["import", "Add from a photo or text", "A school sheet, flyer, receipt or message. Claude adds everything to the right sections."],
-    ["ask", "Ask about our schedule", "For example: what's coming up this week? When is the next day off?"],
-    ["order", "Find my order", "Say what you bought, even roughly (\"the wallet\"). Claude looks through the order emails."],
-    ["email", "Search my email", "For example: Camp Achim registration, or a teacher's name."]
-  ];
-  var askKind = "import", askPhotos = [], askList = null;
-  function escH(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-  function when(ms) { if (!ms) return ""; var d = new Date(ms); return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
-  function listHTML() {
-    if (!askList) return '<div class="empty">Loading…</div>';
-    if (!askList.length) return '<div class="empty">Nothing sent yet.</div>';
-    return askList.map(function (q) {
-      var k = KINDS.filter(function (x) { return x[0] === q.kind; })[0];
-      var st = q.status === "done" ? '<span class="chip" style="background:#E3F4EA;color:#1D6B3F">Answered</span>'
-        : q.status === "failed" ? '<span class="chip" style="background:#FBE7E6;color:#A12C22">Couldn\'t do it</span>'
-        : '<span class="chip" style="background:#FFF4D6;color:#7A5A00">Waiting for Claude</span>';
-      return '<div class="fdq"><div class="fdq-h"><b>' + escH(k ? k[1] : q.kind) + '</b>' + st + '<span class="fdq-t">' + escH(when(q.createdAt)) + '</span></div>' +
-        (q.text ? '<div class="fdq-x">' + escH(q.text) + '</div>' : '') + (q.photos && q.photos.length ? '<div class="fdq-x" style="color:var(--muted)">' + q.photos.length + ' photo' + (q.photos.length > 1 ? 's' : '') + '</div>' : '') +
-        (q.answer ? '<div class="fdq-a">' + escH(q.answer).replace(/\n/g, "<br>") + '</div>' : '') + '</div>';
-    }).join("");
-  }
-  function refreshList() {
-    call("requests").then(function (r) { askList = r.requests || []; var b = document.getElementById("fdAskList"); if (b) b.innerHTML = listHTML(); }, function () {});
-  }
-  setInterval(function () { if (document.getElementById("fdAskList") && document.visibilityState === "visible") refreshList(); }, 30000);
-  window.__fdAskView = function () {
-    setTimeout(refreshList, 0);
-    return '<div class="view-head"><div><h2>Ask Claude</h2><p>Send a photo, a question or a search. Elliot\'s Claude handles it and the answer shows here, usually within 15 minutes while his computer is on. New items appear in the app by themselves.</p></div></div>' +
-      '<style>.fdk{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.fdk button{text-align:left;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:4px}.fdk button span{font-size:13px;color:var(--muted)}.fdk button.on{border-color:var(--accent);background:var(--soft)}.fdq{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;background:var(--panel)}.fdq-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.fdq-t{color:var(--muted);font-size:12.5px;margin-left:auto}.fdq-a{background:var(--soft);border-radius:8px;padding:10px;line-height:1.5}.fdq-x{font-size:14px}#fdAskList{display:flex;flex-direction:column;gap:10px}.fdthumbs{display:flex;gap:8px;flex-wrap:wrap}.fdthumbs img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}</style>' +
-      '<section class="panel"><div class="panel-b" style="display:flex;flex-direction:column;gap:14px;padding:16px">' +
-      '<div class="fdk">' + KINDS.map(function (k) { return '<button type="button" data-fdkind="' + k[0] + '" class="' + (askKind === k[0] ? "on" : "") + '"><b>' + escH(k[1]) + '</b><span>' + escH(k[2]) + '</span></button>'; }).join("") + '</div>' +
-      '<div class="field"><label for="fdAskText">What do you need?</label><textarea id="fdAskText" rows="3" placeholder="Type here, or just add photos"></textarea></div>' +
-      '<div class="fdthumbs" id="fdAskThumbs"></div>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><label class="btn">Add photos<input type="file" id="fdAskPhotos" accept="image/*" multiple hidden></label>' +
-      '<button type="button" class="btn primary" id="fdAskSend">Send to Claude</button><span id="fdAskMsg" style="font-size:14px"></span></div>' +
-      '</div></section>' +
-      '<section style="display:flex;flex-direction:column;gap:10px"><h3 style="font-size:16px">Sent to Claude</h3><div id="fdAskList">' + listHTML() + '</div></section>';
-  };
-  function thumbs() { var t = document.getElementById("fdAskThumbs"); if (t) t.innerHTML = askPhotos.map(function (p) { return '<img alt="" src="' + p.url + '">'; }).join(""); }
-  document.addEventListener("click", function (e) {
-    var k = e.target.closest && e.target.closest("[data-fdkind]");
-    if (k) { askKind = k.getAttribute("data-fdkind"); document.querySelectorAll("[data-fdkind]").forEach(function (b) { b.classList.toggle("on", b === k); }); return; }
-    if (e.target.closest && e.target.closest("#fdAskSend")) {
-      var btn = document.getElementById("fdAskSend"), msgEl = document.getElementById("fdAskMsg"), text = (document.getElementById("fdAskText").value || "").trim();
-      if (!text && !askPhotos.length) { msgEl.textContent = "Type something or add a photo first."; return; }
-      btn.disabled = true; msgEl.textContent = askPhotos.length ? "Saving photos…" : "Sending…";
-      Promise.all(askPhotos.map(function (p) { return p.id ? Promise.resolve(p.id) : assets.upload(p.file).then(function (r) { p.id = r.id; return r.id; }); }))
-        .then(function (ids) { msgEl.textContent = "Sending…"; return call("ask", { kind: askKind, text: text, photos: ids }); })
-        .then(function () {
-          btn.disabled = false; askPhotos = []; thumbs(); document.getElementById("fdAskText").value = "";
-          msgEl.textContent = "Sent. Claude will answer here, usually within 15 minutes."; refreshList();
-        }, function () { btn.disabled = false; msgEl.textContent = "Couldn't send. Check your connection and try again."; });
-    }
-  });
-  document.addEventListener("change", function (e) {
-    if (e.target && e.target.id === "fdAskPhotos") {
-      [].slice.call(e.target.files || []).slice(0, 6 - askPhotos.length).forEach(function (f) { askPhotos.push({ file: f, url: URL.createObjectURL(f) }); });
-      e.target.value = ""; thumbs();
-    }
-  });
-
-  /* ---------- signing in ---------- */
-  var mode = "in", needCode = false;
-  function msg(t, err) { $("fdMsg").textContent = t || ""; $("fdMsg").className = "gmsg" + (err ? " err" : ""); }
-  function setMode(m) {
-    mode = m; needCode = false;
-    $("fdNameW").hidden = m !== "new"; $("fdPass2W").hidden = m !== "new"; $("fdPass2").value = "";
-    $("fdEmailL").firstChild.nodeValue = m === "new" ? "Email account" : "Email";
-    $("fdPassL").firstChild.nodeValue = m === "new" ? "Make a password" : "Password";
-$("fdCodeW").hidden = true; $("fdResend").hidden = true; $("fdCode").value = "";
-    $("fdPass").setAttribute("autocomplete", m === "new" ? "new-password" : "current-password");
-    $("fdGo").textContent = m === "new" ? "Create account" : "Sign in";
-    $("fdSwap").textContent = m === "new" ? "I already have an account" : "Create an account";
-    $("fdSub").textContent = m === "new" ? "Make your account: your name, your email, and a password you'll remember (at least 6 characters), typed twice." : "Sign in with your email and password.";
-    msg("");
-  }
-  function showGate(m, t) { $("fdGate").hidden = false; setMode(m); if (t) msg(t); }
-  function signedOut(t) { TOKEN = ""; ls(KEEP, null); loaded = false; showGate("in", t); }
-  window.__fdSignOut = function () { call("logout").catch(function () {}); signedOut("You're signed out."); };
-  $("fdSwap").addEventListener("click", function () {
-    if (mode === "in" && !JOIN) { msg("To make an account, open the invite link you were sent, then come back here.", true); return; }
-    setMode(mode === "new" ? "in" : "new");
-  });
-  $("fdResend").addEventListener("click", function () { needCode = false; $("fdCode").value = ""; submit(); });
-  $("fdForm").addEventListener("submit", function (e) { e.preventDefault(); submit(); });
-  function submit() {
-    var email = $("fdEmail").value.trim(), pass = $("fdPass").value, name = $("fdName").value.trim(), code = $("fdCode").value.replace(/\D/g, "");
-    if (mode === "new" && !name) return msg("Type your name.", true);
-    if (!email || !pass) return msg("Type your email and password.", true);
-    if (mode === "new" && pass.length < 6) return msg("Use at least 6 characters for the password.", true);
-    if (mode === "new" && pass !== $("fdPass2").value) return msg("The two passwords don't match. Type them again.", true);
-    if (needCode && code.length !== 6) return msg("Type the 6-digit code from your email.", true);
-    $("fdGo").disabled = true; msg(needCode ? "Checking the code…" : mode === "new" ? "Making your account…" : "Signing in…");
-    send({ action: mode === "new" ? "signup" : "login", email: email, pass: pass, name: name, join: JOIN, code: needCode ? code : "" }).then(function (r) {
-      $("fdGo").disabled = false;
-      TOKEN = r.token; ls(KEEP, TOKEN);
-      $("fdPass").value = ""; $("fdPass2").value = ""; $("fdGate").hidden = true;
-      if (!REMOTE && APP_URL) { try { window.top.location.href = APP_URL + "?k=" + TOKEN; return; } catch (e) {} }   // Google page: open this phone's own page, which remembers the sign-in
-      afterIn(true);
-    }, function (e) {
-      $("fdGo").disabled = false;
-      var c = e && e.error;
-      if (c === "code") {
-        needCode = true; $("fdCodeW").hidden = false; $("fdResend").hidden = false; $("fdGo").textContent = "Finish";
-        msg("We just emailed a 6-digit code to " + email + ". Type it here. You only do this once."); try { $("fdCode").focus(); } catch (x) {}
-        return;
-      }
-      msg(c === "badcode" ? "That code isn't right. Check the email and try again."
-        : c === "codeold" ? "That code has run out. Tap Send a new code."
-        : c === "codewait" ? "Too many codes were sent. Wait an hour and try again."
-        : c === "mail" ? "The code couldn't be emailed just now. Try again in a minute."
-        : c === "locked" ? "Too many wrong tries. Wait " + (e.minutes || 15) + " minutes and try again."
-        : c === "badlogin" ? "That email and password don't match. Check them and try again."
-        : c === "exists" ? "You already have an account. Tap \"I already have an account\" and sign in."
-        : c === "bademail" ? "That doesn't look like an email address."
-        : c === "short" ? "Use at least 6 characters for the password."
-        : c === "nojoin" ? "This link can't make a new account. Ask for a new invite link."
-        : c === "full" ? "No more accounts can be made right now."
-        : "Couldn't reach Google. Check your connection and try again.", true);
-    });
-  }
-  function afterIn(fresh) {
-    load().then(function () {
-      var standalone = window.navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
-      if (fresh && !standalone && /iPhone|iPad|Android/i.test(navigator.userAgent)) $("fdHome").hidden = false;
-    });
-  }
-  try { var bi = document.getElementById("btnImport"); if (bi) { var tn = [].slice.call(bi.childNodes).filter(function (n) { return n.nodeType === 3 && /Smart import/.test(n.nodeValue); })[0]; if (tn) tn.nodeValue = tn.nodeValue.replace("Smart import", "Ask Claude"); } } catch (e) {}
-  $("fdHomeX").addEventListener("click", function () { $("fdHome").hidden = true; });
-  if (TOKEN) afterIn(!!URLKEY);
-  else showGate(JOIN ? "new" : "in", JOIN ? "" : "");
-  if (URLKEY) ls(KEEP, URLKEY);
-  // Clean the invite out of the address bar once it is remembered, so a home-screen icon is not saved with it.
-  if (REMOTE && params.get("join") && history.replaceState) history.replaceState(null, "", location.pathname);
-})();
-</script>
-
 <script>document.documentElement.setAttribute("data-theme","light");</script>
 <meta name="color-scheme" content="light">
 <style>
@@ -391,8 +64,13 @@ h1,h2,h3{font-family:var(--f-display);font-weight:700;text-wrap:balance;margin:0
 .nav .sw{width:10px;height:10px;border-radius:3px;flex:none}
 .nav .ct{margin-left:auto;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
 .rail-foot{margin-top:auto;font-size:12px;color:var(--muted);padding:0 8px}
-.tabbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:70;grid-template-columns:repeat(5,minmax(0,1fr));background:color-mix(in srgb,var(--panel) 96%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px max(8px, env(safe-area-inset-right,0px)) max(8px, env(safe-area-inset-bottom,0px)) max(8px, env(safe-area-inset-left,0px))}
-.tabbar a,.tabbar button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:600;text-decoration:none;cursor:pointer}
+.tb-sec{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;padding:2px 0 6px;border-bottom:1px solid var(--line);margin-bottom:2px}
+.tb-sec a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0 5px;border-radius:9px;font-size:11px;font-weight:600;color:var(--ink);text-decoration:none}
+.tb-sec a i{width:20px;height:6px;border-radius:3px;display:block}
+.tb-sec a.on{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
+.tb-main{display:grid;grid-template-columns:repeat(6,minmax(0,1fr))}
+.tabbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:70;flex-direction:column;background:color-mix(in srgb,var(--panel) 96%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px max(8px, env(safe-area-inset-right,0px)) max(8px, env(safe-area-inset-bottom,0px)) max(8px, env(safe-area-inset-left,0px))}
+.tb-main a,.tb-main button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:600;text-decoration:none;cursor:pointer}
 .tabbar svg{width:23px;height:23px}
 .tabbar .on{color:var(--accent)}
 .tabbar .addb span.plus{width:46px;height:46px;margin-top:-14px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;box-shadow:0 4px 14px rgba(31,95,191,.35)}
@@ -661,8 +339,8 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
   .top{top:0}
   #btnImport,#btnAdd,.search kbd{display:none}
   #btnShare{padding-inline:10px}
-  .view{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
-  .tabbar{display:grid}
+  .view{padding-bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+  .tabbar{display:flex}
   .top{padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px))}
   .view{padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px))}
   .row{grid-template-columns:4px 56px minmax(0,1fr);}
@@ -700,15 +378,406 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
 </div>
 
 <nav class="tabbar" id="tabbar" aria-label="Main">
-  <a href="#today" data-tab="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Today</a>
-  <a href="#calendar" data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
-  <button type="button" class="addb" id="tabAdd" aria-label="Add"><span class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>Add</button>
-  <a href="#wallet" data-tab="wallet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>Wallet</a>
-  <button type="button" id="tabMore" data-tab="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>More</button>
+  <div class="tb-sec">
+    <a href="#school" data-tab="school"><i style="background:var(--c-school)"></i>School</a>
+    <a href="#event" data-tab="event"><i style="background:var(--c-event)"></i>Events</a>
+    <a href="#appt" data-tab="appt"><i style="background:var(--c-appt)"></i>Appts</a>
+    <a href="#return" data-tab="return"><i style="background:var(--c-return)"></i>Returns</a>
+    <a href="#pay" data-tab="pay"><i style="background:var(--c-pay)"></i>Pay</a>
+    <a href="#paper" data-tab="paper"><i style="background:var(--c-paper)"></i>Papers</a>
+    <a href="#task" data-tab="task"><i style="background:var(--c-task)"></i>To-dos</a>
+  </div>
+  <div class="tb-main">
+    <a href="#today" data-tab="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Today</a>
+    <a href="#calendar" data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+    <a href="#wallet" data-tab="wallet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>Wallet</a>
+    <button type="button" class="addb" id="tabAdd" aria-label="Add"><span class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>Add</button>
+    <a href="#import" data-tab="import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"/></svg><span id="tabImportLbl">Import</span></a>
+    <a href="#photos" data-tab="photos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="9" cy="11" r="2"/><path d="m21 17-5-5-8 8"/></svg>Photos</a>
+  </div>
 </nav>
 <dialog id="dlg"></dialog>
 <dialog id="lb"></dialog>
 <div class="toast" id="toast" hidden></div>
+
+<style>
+#fdGate{position:fixed;inset:0;z-index:1000;background:var(--bg,#F3F5F7);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:max(28px,env(safe-area-inset-top,0px)) 16px 28px}
+#fdGate[hidden]{display:none}
+#fdGate form{width:100%;max-width:400px;background:var(--panel,#fff);border:1px solid var(--line,#DDE2E8);border-radius:16px;padding:24px 20px;display:flex;flex-direction:column;gap:14px;margin-top:4vh;box-shadow:0 8px 30px rgba(20,30,50,.08)}
+#fdGate .gl{display:flex;align-items:center;gap:12px}
+#fdGate .gm{width:48px;height:48px;border-radius:12px;background:var(--accent,#1F5FBF);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;letter-spacing:.5px}
+#fdGate h2{margin:0;font-size:22px;color:var(--ink,#18212F)}
+#fdGate .gs{margin:0;color:var(--muted,#5E6A7B);font-size:14.5px;line-height:1.45}
+#fdGate label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:14px;color:var(--ink,#18212F)}
+#fdGate input{box-sizing:border-box;width:100%;font:inherit;font-size:16px;padding:12px;border-radius:10px;border:1px solid var(--line,#DDE2E8);background:var(--panel,#fff);color:var(--ink,#18212F);min-height:46px}
+#fdGate button{font:inherit;font-size:16px;min-height:48px;border-radius:10px;cursor:pointer;font-weight:700}
+#fdGate .go{background:var(--accent,#1F5FBF);color:#fff;border:0}
+#fdGate .go:disabled{opacity:.6}
+#fdGate .alt{background:transparent;border:1px solid var(--line,#DDE2E8);color:var(--ink,#18212F);font-weight:600}
+#fdGate .gmsg{margin:0;font-size:14.5px;line-height:1.45;color:var(--ink,#18212F);min-height:1em}
+#fdGate .gmsg.err{color:#B42318}
+#fdGate [hidden]{display:none!important}
+#fdHome{position:fixed;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom,0px));z-index:900;background:var(--ink,#18212F);color:var(--bg,#fff);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.4;display:flex;gap:10px;align-items:center}
+#fdHome[hidden]{display:none}
+#fdHome button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+</style>
+<div id="fdGate" hidden>
+  <form id="fdForm" novalidate>
+    <div class="gl"><div class="gm" aria-hidden="true">FD</div><h2 id="fdTitle">Family Docket</h2></div>
+    <p class="gs" id="fdSub"></p>
+    <label id="fdNameW" hidden>Your name<input id="fdName" type="text" maxlength="60" autocomplete="name" placeholder="First and last name"></label>
+    <label id="fdEmailL">Email<input id="fdEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+    <label id="fdPassL">Password<input id="fdPass" type="password" autocomplete="current-password"></label>
+    <label id="fdPass2W" hidden>Confirm password<input id="fdPass2" type="password" autocomplete="new-password"></label>
+    <label id="fdCodeW" hidden>Code from your email<input id="fdCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></label>
+    <p class="gmsg" id="fdMsg" role="status" aria-live="polite"></p>
+    <button type="submit" class="go" id="fdGo">Sign in</button>
+    <button type="button" class="alt" id="fdResend" hidden>Send a new code</button>
+    <button type="button" class="alt" id="fdSwap">Create an account</button>
+  </form>
+</div>
+<div id="fdHome" hidden><span style="flex:1">You're in. To open it like an app: tap <b>Share</b>, then <b>Add to Home Screen</b>.</span><button type="button" id="fdHomeX">OK</button></div>
+<script>
+/* Family Docket, Google version: connects the app to the family list kept in Google, and handles signing in.
+   It gives the app the same small set of tools the Claude version has (saved items, photos, saving a file). */
+(function () {
+  "use strict";
+  var REMOTE = "https://script.google.com/macros/s/AKfycbxgMcpcNNZ6Lg9RGopK_7vn7_Gu6uU64f29OJiraBbO8ZWn3zlL4X6wHXMbs36ReGWAEg/exec", URLKEY = "__DEVICE_KEY__", JOIN = "__JOIN_KEY__", APP_URL = "__APP_URL__";
+  function real(v) { return /^__[A-Z_]+__$/.test(v) ? "" : v; }
+  REMOTE = real(REMOTE); URLKEY = real(URLKEY).replace(/[^a-f0-9]/g, ""); JOIN = real(JOIN); APP_URL = real(APP_URL);
+  var params = new URLSearchParams(location.search);
+  if (!JOIN) JOIN = (params.get("join") || "").replace(/[^a-z0-9]/g, "");
+  var KEEP = "fd-key", JK = "fd-join";
+  function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k) || ""; if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return ""; } }
+  if (JOIN) ls(JK, JOIN); else JOIN = ls(JK);
+  var TOKEN = URLKEY || ls(KEEP);
+  window.FD_GOOGLE = true;
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------- talking to Google ---------- */
+  function send(req) {
+    return new Promise(function (res, rej) {
+      var done = function (r) { r && r.ok ? res(r) : rej(r || { error: "failed" }); };
+      if (REMOTE) {
+        fetch(REMOTE, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(req), redirect: "follow" })
+          .then(function (r) { return r.json(); }).then(done, function () { rej({ error: "network" }); });
+      } else if (window.google && google.script && google.script.run) {
+        google.script.run.withSuccessHandler(done).withFailureHandler(function () { rej({ error: "network" }); }).api(req);
+      } else rej({ error: "network" });
+    });
+  }
+  function call(action, extra) { return send(Object.assign({ action: action, token: TOKEN }, extra || {})); }
+
+  /* ---------- the family list, kept here and refreshed from Google ---------- */
+  var cache = {}, listeners = [], loaded = false, pending = 0, ready, readyRes;
+  ready = new Promise(function (r) { readyRes = r; });
+  function snap(col) {
+    var docs = Object.keys(cache).filter(function (id) { return cache[id].col === col; })
+      .map(function (id) { var d = cache[id].data; return { id: id, data: function () { return d; } }; });
+    return { docs: docs, metadata: { fromCache: false } };
+  }
+  function fire() { listeners.forEach(function (l) { try { l.cb(snap(l.col)); } catch (e) {} }); }
+  function take(r) {
+    var c = {}; (r.items || []).forEach(function (x) { if (x && x.data && x.data.id) c[x.data.id] = { col: x.col, data: x.data }; });
+    cache = c; window.FD_LINKS = r.links || null; window.FD_ME = (r.me && r.me.email) || ""; window.FD_ROLE = (r.me && r.me.role) || ""; window.FD_AI = !!r.ai; window.FD_MAIL = !!r.mail; renameImport();
+  }
+  function load(quiet) {
+    return call("load").then(function (r) {
+      if (pending) return;        // a save is on its way; the next refresh picks it up
+      take(r); loaded = true; fire(); readyRes(true);
+    }, function (e) { if (e && e.error === "signin") signedOut("Please sign in again."); else if (!quiet) readyRes(true); });
+  }
+  setInterval(function () { if (loaded && document.visibilityState === "visible") load(true); }, 45000);
+  document.addEventListener("visibilitychange", function () { if (loaded && document.visibilityState === "visible") load(true); });
+  var chain = Promise.resolve();
+  function write(req, apply) {
+    apply(); fire(); pending++;
+    var p = chain.then(function () { return call(req.action, req); });
+    chain = p.then(function () {}, function () {});
+    return p.then(function () { pending--; }, function (e) {
+      pending--;
+      if (e && e.error === "signin") { signedOut("Please sign in again."); }
+      var err = new Error("save failed"); err.code = e && e.error === "denied" ? "invalid_argument" : "unavailable"; throw err;
+    });
+  }
+  var db = {
+    collection: function (col) {
+      return {
+        doc: function (id) {
+          return {
+            set: function (d) { return write({ action: "saveItem", col: col, id: id, data: d }, function () { cache[id] = { col: col, data: Object.assign({}, d, { id: id }) }; }); },
+            delete: function () { return write({ action: "deleteItem", col: col, id: id }, function () { if (cache[id] && cache[id].col === col) delete cache[id]; }); },
+            get: function () { var x = cache[id]; return Promise.resolve({ exists: !!(x && x.col === col), data: function () { return x ? x.data : null; } }); }
+          };
+        },
+        onSnapshot: function (cb) { var l = { col: col, cb: cb }; listeners.push(l); if (loaded) setTimeout(function () { cb(snap(col)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; }
+      };
+    },
+    doc: function () { return { get: function () { return Promise.resolve({ exists: false, data: function () { return null; } }); }, set: function () { return Promise.resolve(); } }; }
+  };
+
+  /* ---------- photos: kept in Google, shown from here ---------- */
+  var photos = {}, asking = {};
+  var MARK = "data:,fdp-";
+  window.__fdBlobUrl = function (id) { if (photos[id]) return photos[id]; getPhoto(id); return MARK + id; };
+  function getPhoto(id) {
+    if (asking[id] || photos[id] || !/^[a-f0-9]{32}$/.test(id)) return;
+    asking[id] = 1;
+    call("getPhoto", { id: id }).then(function (r) { photos[id] = r.data; fix(); }, function () { setTimeout(function () { delete asking[id]; }, 15000); });
+  }
+  function fix() {
+    document.querySelectorAll('img[src^="' + MARK + '"], a[href^="' + MARK + '"]').forEach(function (n) {
+      var attr = n.tagName === "A" ? "href" : "src", id = n.getAttribute(attr).slice(MARK.length);
+      if (photos[id]) n.setAttribute(attr, photos[id]); else getPhoto(id);
+    });
+  }
+  var fixQueued = false;
+  new MutationObserver(function () { if (fixQueued) return; fixQueued = true; requestAnimationFrame(function () { fixQueued = false; fix(); }); })
+    .observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src", "href"] });
+  function shrink(file) {
+    return new Promise(function (res, rej) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight, 1)), c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        res(c.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error("not a picture")); };
+      img.src = url;
+    });
+  }
+  var assets = {
+    upload: function (file) {
+      return shrink(file).then(function (data) {
+        return call("savePhoto", { data: data }).then(function (r) { photos[r.id] = data; return { id: r.id, url: data, sizeBytes: data.length, contentType: "image/jpeg" }; });
+      });
+    },
+    list: function () { return Promise.resolve({ assets: [], usage: {} }); },
+    delete: function () { return Promise.resolve(); }
+  };
+  var downloads = {
+    save: function (o) {
+      var blob = o.data instanceof Blob ? o.data : new Blob([o.data], { type: /\.ics$/i.test(o.filename) ? "text/calendar" : "application/octet-stream" });
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = o.filename || "file";
+      document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+      return Promise.resolve();
+    }
+  };
+
+  /* ---------- Gemini: the app's smart features, through the family server ---------- */
+  function cleanJSON(text) {
+    var s = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    try { return JSON.parse(s); } catch (e) {}
+    var a = s.indexOf("["), o = s.indexOf("{"), i = a < 0 ? o : o < 0 ? a : Math.min(a, o);
+    if (i >= 0) { var j = Math.max(s.lastIndexOf("]"), s.lastIndexOf("}")); try { return JSON.parse(s.slice(i, j + 1)); } catch (e2) {} }
+    var err = new Error("bad answer"); err.code = "bad_json"; throw err;
+  }
+  function aiCall(input, opts, json) {
+    opts = opts || {};
+    var msgs = typeof input === "string" ? [{ role: "user", content: input }] : (Array.isArray(input) ? input : [{ role: "user", content: String(input) }]);
+    return Promise.all((opts.images || []).slice(0, 5).map(function (b) { return shrink(b); })).then(function (imgs) {
+      return call("ai", { messages: msgs, images: imgs, json: !!json });
+    }).then(function (r) {
+      var text = r.text || "";
+      if (opts.onText) { try { opts.onText({ text: text, delta: text }); } catch (e) {} }
+      return { text: text, truncated: false };
+    }, function (e) { var err = new Error((e && e.error) || "failed"); err.code = e && e.error === "rate_limited" ? "rate_limited" : e && e.error === "not_granted" ? "not_granted" : "unavailable"; throw err; });
+  }
+  var sample = function (input, opts) { return aiCall(input, opts, false); };
+  sample.json = function (input, opts) { return aiCall(input, opts, true).then(function (r) { return cleanJSON(r.text); }); };
+  sample.limits = function () { return Promise.resolve({ images: { maxCount: 5 } }); };
+  var mcp = { callTool: function (server, tool, args) { return call("mail", { tool: tool, args: args }).then(function (r) { return { payload: r.payload }; }, function (e) { var err = new Error("mail"); err.code = "tool_error"; throw err; }); } };
+  window.__fdUse = function (name) {
+    if (name === "sample") return ready.then(function () { return window.FD_AI ? sample : null; });
+    if (name === "mcp") return ready.then(function () { return window.FD_MAIL ? mcp : null; });
+    return null;
+  };
+  window.__fdSaveAiKey = function (key) { return call("setAiKey", { aiKey: key }); };
+
+  var user = { canEdit: function () { return Promise.resolve(true); }, isOwner: function () { return Promise.resolve(window.FD_ROLE === "owner"); }, can: function () { return Promise.resolve(true); } };
+  window.claude = {
+    use: function (name) {
+      if (name === "db") return ready.then(function () { return loaded ? db : null; });
+      if (name === "assets") return ready.then(function () { return loaded ? assets : null; });
+      if (name === "downloads") return Promise.resolve(downloads);
+      if (name === "user") return Promise.resolve(user);
+      if (name === "sample" || name === "mcp") return window.__fdUse(name);
+      return Promise.resolve(null);   // the Claude-only extras (smart reading, Gmail) are not in this version
+    }
+  };
+
+
+  /* ---------- reading a card photo: Google's free text reader (no AI) ---------- */
+  function blobToData(b) { return shrink(b); }
+  window.__fdReadCard = function (blobs) {
+    return Promise.all(blobs.slice(0, 2).map(blobToData)).then(function (imgs) {
+      return call("readCard", { images: imgs });
+    }).then(function (r) {
+      var c = r.card || {};
+      if (!c.issuer && !c.memberId && !c.group) { var e = new Error("unread"); e.code = "unread"; throw e; }
+      return c;
+    });
+  };
+
+  /* ---------- Ask Claude: requests answered by Elliot's Claude on his computer ---------- */
+  var KINDS = [
+    ["import", "Add from a photo or text", "A school sheet, flyer, receipt or message. Claude adds everything to the right sections."],
+    ["ask", "Ask about our schedule", "For example: what's coming up this week? When is the next day off?"],
+    ["order", "Find my order", "Say what you bought, even roughly (\"the wallet\"). Claude looks through the order emails."],
+    ["email", "Search my email", "For example: Camp Achim registration, or a teacher's name."]
+  ];
+  var askKind = "import", askPhotos = [], askList = null;
+  function escH(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function when(ms) { if (!ms) return ""; var d = new Date(ms); return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
+  function listHTML() {
+    if (!askList) return '<div class="empty">Loading…</div>';
+    if (!askList.length) return '<div class="empty">Nothing sent yet.</div>';
+    return askList.map(function (q) {
+      var k = KINDS.filter(function (x) { return x[0] === q.kind; })[0];
+      var st = q.status === "done" ? '<span class="chip" style="background:#E3F4EA;color:#1D6B3F">Answered</span>'
+        : q.status === "failed" ? '<span class="chip" style="background:#FBE7E6;color:#A12C22">Couldn\'t do it</span>'
+        : '<span class="chip" style="background:#FFF4D6;color:#7A5A00">Waiting for Claude</span>';
+      return '<div class="fdq"><div class="fdq-h"><b>' + escH(k ? k[1] : q.kind) + '</b>' + st + '<span class="fdq-t">' + escH(when(q.createdAt)) + '</span></div>' +
+        (q.text ? '<div class="fdq-x">' + escH(q.text) + '</div>' : '') + (q.photos && q.photos.length ? '<div class="fdq-x" style="color:var(--muted)">' + q.photos.length + ' photo' + (q.photos.length > 1 ? 's' : '') + '</div>' : '') +
+        (q.answer ? '<div class="fdq-a">' + escH(q.answer).replace(/\n/g, "<br>") + '</div>' : '') + '</div>';
+    }).join("");
+  }
+  function refreshList() {
+    call("requests").then(function (r) { askList = r.requests || []; var b = document.getElementById("fdAskList"); if (b) b.innerHTML = listHTML(); }, function () {});
+  }
+  setInterval(function () { if (document.getElementById("fdAskList") && document.visibilityState === "visible") refreshList(); }, 30000);
+  window.__fdAskView = function () {
+    setTimeout(refreshList, 0);
+    return '<div class="view-head"><div><h2>Ask Claude</h2><p>Send a photo, a question or a search. Elliot\'s Claude handles it and the answer shows here, usually within 15 minutes while his computer is on. New items appear in the app by themselves.</p></div></div>' +
+      '<style>.fdk{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.fdk button{text-align:left;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:4px}.fdk button span{font-size:13px;color:var(--muted)}.fdk button.on{border-color:var(--accent);background:var(--soft)}.fdq{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;background:var(--panel)}.fdq-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.fdq-t{color:var(--muted);font-size:12.5px;margin-left:auto}.fdq-a{background:var(--soft);border-radius:8px;padding:10px;line-height:1.5}.fdq-x{font-size:14px}#fdAskList{display:flex;flex-direction:column;gap:10px}.fdthumbs{display:flex;gap:8px;flex-wrap:wrap}.fdthumbs img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}</style>' +
+      (window.FD_ROLE === "owner" ? '<section class="panel"><div class="panel-b" style="display:flex;flex-direction:column;gap:10px;padding:16px"><b>Turn on instant smart features (Gemini)</b><span style="font-size:14px;color:var(--muted)">Paste your free Gemini key here. It is kept only on the family server, never shown again. Then reading cards and school sheets, sorting, questions and order search work right away for everyone.</span><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="fdAiKey" type="password" autocomplete="off" placeholder="Paste key (starts with AIza)" style="flex:1 1 240px;min-width:0;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px"><button type="button" class="btn primary" id="fdAiSave">Turn on</button></div><span id="fdAiMsg" style="font-size:14px"></span></div></section>' : '') +
+      ((window.FD_ROLE === "owner" || window.FD_ROLE === "full") ? '<section class="panel"><div class="panel-b" style="display:flex;flex-direction:column;gap:10px;padding:16px"><b>One tap, nothing to type</b><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" data-fdquick="all">Check all my email</button><button type="button" class="btn" data-fdquick="returns">Find all my returns</button></div><span id="fdQuickMsg" style="font-size:14px;color:var(--muted)">Claude looks through your email and adds what it finds: returns with their deadlines, school dates, events, payments and forms.</span></div></section>' : '') +
+      '<section class="panel"><div class="panel-b" style="display:flex;flex-direction:column;gap:14px;padding:16px">' +
+      '<div class="fdk">' + KINDS.map(function (k) { return '<button type="button" data-fdkind="' + k[0] + '" class="' + (askKind === k[0] ? "on" : "") + '"><b>' + escH(k[1]) + '</b><span>' + escH(k[2]) + '</span></button>'; }).join("") + '</div>' +
+      '<div class="field"><label for="fdAskText">What do you need?</label><textarea id="fdAskText" rows="3" placeholder="Type here, or just add photos"></textarea></div>' +
+      '<div class="fdthumbs" id="fdAskThumbs"></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><label class="btn">Add photos<input type="file" id="fdAskPhotos" accept="image/*" multiple hidden></label>' +
+      '<button type="button" class="btn primary" id="fdAskSend">Send to Claude</button><span id="fdAskMsg" style="font-size:14px"></span></div>' +
+      '</div></section>' +
+      '<section style="display:flex;flex-direction:column;gap:10px"><h3 style="font-size:16px">Sent to Claude</h3><div id="fdAskList">' + listHTML() + '</div></section>';
+  };
+  function thumbs() { var t = document.getElementById("fdAskThumbs"); if (t) t.innerHTML = askPhotos.map(function (p) { return '<img alt="" src="' + p.url + '">'; }).join(""); }
+  document.addEventListener("click", function (e) {
+    var k = e.target.closest && e.target.closest("[data-fdkind]");
+    if (k) { askKind = k.getAttribute("data-fdkind"); document.querySelectorAll("[data-fdkind]").forEach(function (b) { b.classList.toggle("on", b === k); }); return; }
+    var qb = e.target.closest && e.target.closest("[data-fdquick]");
+    if (qb) {
+      var all = qb.getAttribute("data-fdquick") === "all", qm = document.getElementById("fdQuickMsg");
+      qb.disabled = true; qm.textContent = "Sending…";
+      call("ask", all ? { kind: "email", text: "Check all my email from the last 30 days and add every store return (with return-by date and any QR code), school date, event, payment and form that isn't already in the app." }
+                      : { kind: "order", text: "Find every store return I started in the last 90 days (Amazon, Walmart, Costco, Target and others) and add each one to Returns with the item, refund amount, return-by date and drop-off method, if it isn't already there." })
+        .then(function () { qb.disabled = false; qm.textContent = "Sent. Claude will add what it finds, usually within 15 minutes. The answer shows below."; refreshList(); },
+              function () { qb.disabled = false; qm.textContent = "Couldn't send. Check your connection and try again."; });
+      return;
+    }
+    if (e.target.closest && e.target.closest("#fdAiSave")) {
+      var kb = document.getElementById("fdAiKey"), km = document.getElementById("fdAiMsg"), kv = (kb.value || "").trim();
+      if (!kv) { km.textContent = "Paste the key first."; return; }
+      km.textContent = "Checking the key with Google…";
+      window.__fdSaveAiKey(kv).then(function () { kb.value = ""; km.textContent = "Done. Smart features are on. Reloading…"; setTimeout(function () { location.reload(); }, 1200); },
+        function (er) { km.textContent = er && er.error === "badkey" ? "Google didn't accept that key. Copy it again from aistudio.google.com/apikey and paste it." : "Couldn't save just now. Try again."; });
+      return;
+    }
+    if (e.target.closest && e.target.closest("#fdAskSend")) {
+      var btn = document.getElementById("fdAskSend"), msgEl = document.getElementById("fdAskMsg"), text = (document.getElementById("fdAskText").value || "").trim();
+      if (!text && !askPhotos.length) { msgEl.textContent = "Type something or add a photo first."; return; }
+      btn.disabled = true; msgEl.textContent = askPhotos.length ? "Saving photos…" : "Sending…";
+      Promise.all(askPhotos.map(function (p) { return p.id ? Promise.resolve(p.id) : assets.upload(p.file).then(function (r) { p.id = r.id; return r.id; }); }))
+        .then(function (ids) { msgEl.textContent = "Sending…"; return call("ask", { kind: askKind, text: text, photos: ids }); })
+        .then(function () {
+          btn.disabled = false; askPhotos = []; thumbs(); document.getElementById("fdAskText").value = "";
+          msgEl.textContent = "Sent. Claude will answer here, usually within 15 minutes."; refreshList();
+        }, function () { btn.disabled = false; msgEl.textContent = "Couldn't send. Check your connection and try again."; });
+    }
+  });
+  document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "fdAskPhotos") {
+      [].slice.call(e.target.files || []).slice(0, 6 - askPhotos.length).forEach(function (f) { askPhotos.push({ file: f, url: URL.createObjectURL(f) }); });
+      e.target.value = ""; thumbs();
+    }
+  });
+
+  /* ---------- signing in ---------- */
+  var mode = "in", needCode = false;
+  function msg(t, err) { $("fdMsg").textContent = t || ""; $("fdMsg").className = "gmsg" + (err ? " err" : ""); }
+  function setMode(m) {
+    mode = m; needCode = false;
+    $("fdNameW").hidden = m !== "new"; $("fdPass2W").hidden = m !== "new"; $("fdPass2").value = "";
+    $("fdEmailL").firstChild.nodeValue = m === "new" ? "Email account" : "Email";
+    $("fdPassL").firstChild.nodeValue = m === "new" ? "Make a password" : "Password";
+$("fdCodeW").hidden = true; $("fdResend").hidden = true; $("fdCode").value = "";
+    $("fdPass").setAttribute("autocomplete", m === "new" ? "new-password" : "current-password");
+    $("fdGo").textContent = m === "new" ? "Create account" : "Sign in";
+    $("fdSwap").textContent = m === "new" ? "I already have an account" : "Create an account";
+    $("fdSub").textContent = m === "new" ? "Make your account: your name, your email, and a password you'll remember (at least 6 characters), typed twice." : "Sign in with your email and password.";
+    msg("");
+  }
+  function showGate(m, t) { $("fdGate").hidden = false; setMode(m); if (t) msg(t); }
+  function signedOut(t) { TOKEN = ""; ls(KEEP, null); loaded = false; showGate("in", t); }
+  window.__fdSignOut = function () { call("logout").catch(function () {}); signedOut("You're signed out."); };
+  $("fdSwap").addEventListener("click", function () {
+    if (mode === "in" && !JOIN) { msg("To make an account, open the invite link you were sent, then come back here.", true); return; }
+    setMode(mode === "new" ? "in" : "new");
+  });
+  $("fdResend").addEventListener("click", function () { needCode = false; $("fdCode").value = ""; submit(); });
+  $("fdForm").addEventListener("submit", function (e) { e.preventDefault(); submit(); });
+  function submit() {
+    var email = $("fdEmail").value.trim(), pass = $("fdPass").value, name = $("fdName").value.trim(), code = $("fdCode").value.replace(/\D/g, "");
+    if (mode === "new" && !name) return msg("Type your name.", true);
+    if (!email || !pass) return msg("Type your email and password.", true);
+    if (mode === "new" && pass.length < 6) return msg("Use at least 6 characters for the password.", true);
+    if (mode === "new" && pass !== $("fdPass2").value) return msg("The two passwords don't match. Type them again.", true);
+    if (needCode && code.length !== 6) return msg("Type the 6-digit code from your email.", true);
+    $("fdGo").disabled = true; msg(needCode ? "Checking the code…" : mode === "new" ? "Making your account…" : "Signing in…");
+    send({ action: mode === "new" ? "signup" : "login", email: email, pass: pass, name: name, join: JOIN, code: needCode ? code : "" }).then(function (r) {
+      $("fdGo").disabled = false;
+      TOKEN = r.token; ls(KEEP, TOKEN);
+      $("fdPass").value = ""; $("fdPass2").value = ""; $("fdGate").hidden = true;
+      if (!REMOTE && APP_URL) { try { window.top.location.href = APP_URL + "?k=" + TOKEN; return; } catch (e) {} }   // Google page: open this phone's own page, which remembers the sign-in
+      afterIn(true);
+    }, function (e) {
+      $("fdGo").disabled = false;
+      var c = e && e.error;
+      if (c === "code") {
+        needCode = true; $("fdCodeW").hidden = false; $("fdResend").hidden = false; $("fdGo").textContent = "Finish";
+        msg("We just emailed a 6-digit code to " + email + ". Type it here. You only do this once."); try { $("fdCode").focus(); } catch (x) {}
+        return;
+      }
+      msg(c === "badcode" ? "That code isn't right. Check the email and try again."
+        : c === "codeold" ? "That code has run out. Tap Send a new code."
+        : c === "codewait" ? "Too many codes were sent. Wait an hour and try again."
+        : c === "mail" ? "The code couldn't be emailed just now. Try again in a minute."
+        : c === "locked" ? "Too many wrong tries. Wait " + (e.minutes || 15) + " minutes and try again."
+        : c === "badlogin" ? "That email and password don't match. Check them and try again."
+        : c === "exists" ? "You already have an account. Tap \"I already have an account\" and sign in."
+        : c === "bademail" ? "That doesn't look like an email address."
+        : c === "short" ? "Use at least 6 characters for the password."
+        : c === "nojoin" ? "This link can't make a new account. Ask for a new invite link."
+        : c === "full" ? "No more accounts can be made right now."
+        : "Couldn't reach Google. Check your connection and try again.", true);
+    });
+  }
+  function afterIn(fresh) {
+    load().then(function () {
+      var standalone = window.navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+      if (fresh && !standalone && /iPhone|iPad|Android/i.test(navigator.userAgent)) $("fdHome").hidden = false;
+    });
+  }
+  function renameImport() { try { var bi = document.getElementById("btnImport"); if (bi) { var tn = [].slice.call(bi.childNodes).filter(function (n) { return n.nodeType === 3 && /Smart import|Ask Claude/.test(n.nodeValue); })[0]; if (tn) tn.nodeValue = window.FD_AI ? "Smart import" : "Ask Claude"; } } catch (e) {} }
+  $("fdHomeX").addEventListener("click", function () { $("fdHome").hidden = true; });
+  if (TOKEN) afterIn(!!URLKEY);
+  else showGate(JOIN ? "new" : "in", JOIN ? "" : "");
+  if (URLKEY) ls(KEEP, URLKEY);
+  // Clean the invite out of the address bar once it is remembered, so a home-screen icon is not saved with it.
+  if (REMOTE && params.get("join") && history.replaceState) history.replaceState(null, "", location.pathname);
+})();
+</script>
 
 <script>
 (() => {
@@ -914,12 +983,13 @@ function renderNav(){
   const t=iso(today());
   const count = cat => items.filter(i=>i.cat===cat && !isDone(i) && (isOpenList(cat) || !i.date || (i.endDate||i.date)>=t)).length;
   const link=(v,label,sw,ct)=>`<a href="#${v}" class="${state.view===v?"on":""}">${sw?`<span class="sw" style="background:${sw}"></span>`:icon(v)}${esc(label)}${ct!=null?`<span class="ct">${ct}</span>`:""}</a>`;
-  document.querySelectorAll("#tabbar [data-tab]").forEach(a=>{ const v=a.dataset.tab; a.classList.toggle("on", v==="more" ? document.body.classList.contains("menu-open") || !["today","calendar","wallet"].includes(state.view) : v===state.view && !document.body.classList.contains("menu-open")); });
+  document.querySelectorAll("#tabbar [data-tab]").forEach(a=>a.classList.toggle("on", a.dataset.tab===state.view));
+  { const l=document.getElementById("tabImportLbl"); if(l) l.textContent = window.FD_GOOGLE&&!state.sample ? "Ask" : "Import"; }
   $("#nav").innerHTML =
     link("today","Today") + link("calendar","Calendar") +
     `<div class="nav-label">Sections</div>` +
     Object.entries(CATS).map(([k,c])=>link(k,c.label,`var(${c.color})`,count(k))).join("") +
-    `<div class="nav-label">Tools</div>` + link("import",window.FD_GOOGLE?"Ask Claude":"Smart import") + link("wallet","Wallet") + link("photos","Photos");
+    `<div class="nav-label">Tools</div>` + link("import",window.FD_GOOGLE&&!state.sample?"Ask Claude":"Smart import") + link("wallet","Wallet") + link("photos","Photos");
   const note = state.mode==="db" ? (window.FD_GOOGLE?"Saved to the family list.":state.readOnly?"View only":"Saved to your account. Syncs across your devices.") : state.mode==="local" ? "Saved in this browser only." : "Loading…";
   $("#syncNote").textContent = note;
 }
@@ -1570,7 +1640,7 @@ function showDigital(c, side){
   if(!lb.open) lb.showModal();
 }
 async function readCardPhotos(blobs){
-  if(window.__fdReadCard) return window.__fdReadCard(blobs);   // Google version: Google's free text reader, no AI
+  if(window.__fdReadCard && !state.sample) return window.__fdReadCard(blobs);   // Google version: Google's free text reader, no AI
   const x = await state.sample.json(`These are photos of the front${blobs.length>1?" and back":""} of a card from someone's wallet (insurance, pharmacy, ID or membership card).
 Read it and reply with only a JSON object:
 {"kind": one of "health","dental","vision","pharmacy","membership","id","other",
@@ -1974,7 +2044,7 @@ Volunteer slots 8:00-8:45 and 8:45-9:30. Please bring 2 dozen nut-free cookies, 
 Class trip to the Science Center is Jan 14. Trip fee $25, pay the PTA treasurer by Zelle by Dec 10. Permission slip due Dec 10.`;
 
 function viewImport(){
-  if(window.FD_GOOGLE && window.__fdAskView) return window.__fdAskView();   // Google version: requests go to Elliot's Claude
+  if(window.FD_GOOGLE && window.__fdAskView && !state.sample) return window.__fdAskView();   // Google version: requests go to Elliot's Claude
   const can = !!state.sample;
   return `<div class="view-head"><div><h2>Smart import</h2><p>Add a photo of the school's full-year sheet, a flyer or a receipt, or paste the text of an email or WhatsApp message. Claude reads it and sorts everything into the right sections. You check the list before anything is saved, and the original photo is kept with the items.</p></div></div>
   ${state.previewFrom==="email"?`<div class="banner"><span>These came from your Gmail. Untick anything you don't want, then press Add.</span></div>`:""}
@@ -2417,7 +2487,6 @@ document.addEventListener("drop", e=>{ const d=e.target.closest?.("#drop"); if(!
   else { const txt=e.dataTransfer?.getData("text"); if(txt){ $("#impText").value=txt; } } });
 $("#btnAdd").onclick=()=>openQuickAdd();
 $("#tabAdd").onclick=()=>{ document.body.classList.remove("menu-open"); openQuickAdd(); };
-$("#tabMore").onclick=()=>{ document.body.classList.toggle("menu-open"); renderNav(); };
 $("#nav").addEventListener("click", e=>{ if(e.target.closest("a")) document.body.classList.remove("menu-open"); });
 document.querySelectorAll("#tabbar a").forEach(a=>a.addEventListener("click", ()=>document.body.classList.remove("menu-open")));
 $("#btnShare").onclick=()=>openShare();
