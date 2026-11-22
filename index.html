@@ -17,6 +17,335 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
 <style>
+#fdGate{position:fixed;inset:0;z-index:1000;background:var(--bg,#F3F5F7);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:max(28px,env(safe-area-inset-top,0px)) 16px 28px}
+#fdGate[hidden]{display:none}
+#fdGate form{width:100%;max-width:400px;background:var(--panel,#fff);border:1px solid var(--line,#DDE2E8);border-radius:16px;padding:24px 20px;display:flex;flex-direction:column;gap:14px;margin-top:4vh;box-shadow:0 8px 30px rgba(20,30,50,.08)}
+#fdGate .gl{display:flex;align-items:center;gap:12px}
+#fdGate .gm{width:48px;height:48px;border-radius:12px;background:var(--accent,#1F5FBF);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;letter-spacing:.5px}
+#fdGate h2{margin:0;font-size:22px;color:var(--ink,#18212F)}
+#fdGate .gs{margin:0;color:var(--muted,#5E6A7B);font-size:14.5px;line-height:1.45}
+#fdGate label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:14px;color:var(--ink,#18212F)}
+#fdGate input{box-sizing:border-box;width:100%;font:inherit;font-size:16px;padding:12px;border-radius:10px;border:1px solid var(--line,#DDE2E8);background:var(--panel,#fff);color:var(--ink,#18212F);min-height:46px}
+#fdGate button{font:inherit;font-size:16px;min-height:48px;border-radius:10px;cursor:pointer;font-weight:700}
+#fdGate .go{background:var(--accent,#1F5FBF);color:#fff;border:0}
+#fdGate .go:disabled{opacity:.6}
+#fdGate .alt{background:transparent;border:1px solid var(--line,#DDE2E8);color:var(--ink,#18212F);font-weight:600}
+#fdGate .gmsg{margin:0;font-size:14.5px;line-height:1.45;color:var(--ink,#18212F);min-height:1em}
+#fdGate .gmsg.err{color:#B42318}
+#fdGate [hidden]{display:none!important}
+#fdHome{position:fixed;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom,0px));z-index:900;background:var(--ink,#18212F);color:var(--bg,#fff);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.4;display:flex;gap:10px;align-items:center}
+#fdHome[hidden]{display:none}
+#fdHome button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+</style>
+<div id="fdGate" hidden>
+  <form id="fdForm" novalidate>
+    <div class="gl"><div class="gm" aria-hidden="true">FD</div><h2 id="fdTitle">Family Docket</h2></div>
+    <p class="gs" id="fdSub"></p>
+    <label id="fdNameW" hidden>Your name<input id="fdName" type="text" maxlength="60" autocomplete="name" placeholder="First and last name"></label>
+    <label id="fdEmailL">Email<input id="fdEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+    <label id="fdPassL">Password<input id="fdPass" type="password" autocomplete="current-password"></label>
+    <label id="fdPass2W" hidden>Confirm password<input id="fdPass2" type="password" autocomplete="new-password"></label>
+    <label id="fdCodeW" hidden>Code from your email<input id="fdCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></label>
+    <p class="gmsg" id="fdMsg" role="status" aria-live="polite"></p>
+    <button type="submit" class="go" id="fdGo">Sign in</button>
+    <button type="button" class="alt" id="fdResend" hidden>Send a new code</button>
+    <button type="button" class="alt" id="fdSwap">Create an account</button>
+  </form>
+</div>
+<div id="fdHome" hidden><span style="flex:1">You're in. To open it like an app: tap <b>Share</b>, then <b>Add to Home Screen</b>.</span><button type="button" id="fdHomeX">OK</button></div>
+<script>
+/* Family Docket, Google version: connects the app to the family list kept in Google, and handles signing in.
+   It gives the app the same small set of tools the Claude version has (saved items, photos, saving a file). */
+(function () {
+  "use strict";
+  var REMOTE = "https://script.google.com/macros/s/AKfycbxgMcpcNNZ6Lg9RGopK_7vn7_Gu6uU64f29OJiraBbO8ZWn3zlL4X6wHXMbs36ReGWAEg/exec", URLKEY = "__DEVICE_KEY__", JOIN = "__JOIN_KEY__", APP_URL = "__APP_URL__";
+  function real(v) { return /^__[A-Z_]+__$/.test(v) ? "" : v; }
+  REMOTE = real(REMOTE); URLKEY = real(URLKEY).replace(/[^a-f0-9]/g, ""); JOIN = real(JOIN); APP_URL = real(APP_URL);
+  var params = new URLSearchParams(location.search);
+  if (!JOIN) JOIN = (params.get("join") || "").replace(/[^a-z0-9]/g, "");
+  var KEEP = "fd-key", JK = "fd-join";
+  function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k) || ""; if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return ""; } }
+  if (JOIN) ls(JK, JOIN); else JOIN = ls(JK);
+  var TOKEN = URLKEY || ls(KEEP);
+  window.FD_GOOGLE = true;
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------- talking to Google ---------- */
+  function send(req) {
+    return new Promise(function (res, rej) {
+      var done = function (r) { r && r.ok ? res(r) : rej(r || { error: "failed" }); };
+      if (REMOTE) {
+        fetch(REMOTE, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(req), redirect: "follow" })
+          .then(function (r) { return r.json(); }).then(done, function () { rej({ error: "network" }); });
+      } else if (window.google && google.script && google.script.run) {
+        google.script.run.withSuccessHandler(done).withFailureHandler(function () { rej({ error: "network" }); }).api(req);
+      } else rej({ error: "network" });
+    });
+  }
+  function call(action, extra) { return send(Object.assign({ action: action, token: TOKEN }, extra || {})); }
+
+  /* ---------- the family list, kept here and refreshed from Google ---------- */
+  var cache = {}, listeners = [], loaded = false, pending = 0, ready, readyRes;
+  ready = new Promise(function (r) { readyRes = r; });
+  function snap(col) {
+    var docs = Object.keys(cache).filter(function (id) { return cache[id].col === col; })
+      .map(function (id) { var d = cache[id].data; return { id: id, data: function () { return d; } }; });
+    return { docs: docs, metadata: { fromCache: false } };
+  }
+  function fire() { listeners.forEach(function (l) { try { l.cb(snap(l.col)); } catch (e) {} }); }
+  function take(r) {
+    var c = {}; (r.items || []).forEach(function (x) { if (x && x.data && x.data.id) c[x.data.id] = { col: x.col, data: x.data }; });
+    cache = c; window.FD_LINKS = r.links || null; window.FD_ME = (r.me && r.me.email) || ""; window.FD_ROLE = (r.me && r.me.role) || "";
+  }
+  function load(quiet) {
+    return call("load").then(function (r) {
+      if (pending) return;        // a save is on its way; the next refresh picks it up
+      take(r); loaded = true; fire(); readyRes(true);
+    }, function (e) { if (e && e.error === "signin") signedOut("Please sign in again."); else if (!quiet) readyRes(true); });
+  }
+  setInterval(function () { if (loaded && document.visibilityState === "visible") load(true); }, 45000);
+  document.addEventListener("visibilitychange", function () { if (loaded && document.visibilityState === "visible") load(true); });
+  var chain = Promise.resolve();
+  function write(req, apply) {
+    apply(); fire(); pending++;
+    var p = chain.then(function () { return call(req.action, req); });
+    chain = p.then(function () {}, function () {});
+    return p.then(function () { pending--; }, function (e) {
+      pending--;
+      if (e && e.error === "signin") { signedOut("Please sign in again."); }
+      var err = new Error("save failed"); err.code = e && e.error === "denied" ? "invalid_argument" : "unavailable"; throw err;
+    });
+  }
+  var db = {
+    collection: function (col) {
+      return {
+        doc: function (id) {
+          return {
+            set: function (d) { return write({ action: "saveItem", col: col, id: id, data: d }, function () { cache[id] = { col: col, data: Object.assign({}, d, { id: id }) }; }); },
+            delete: function () { return write({ action: "deleteItem", col: col, id: id }, function () { if (cache[id] && cache[id].col === col) delete cache[id]; }); },
+            get: function () { var x = cache[id]; return Promise.resolve({ exists: !!(x && x.col === col), data: function () { return x ? x.data : null; } }); }
+          };
+        },
+        onSnapshot: function (cb) { var l = { col: col, cb: cb }; listeners.push(l); if (loaded) setTimeout(function () { cb(snap(col)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; }
+      };
+    },
+    doc: function () { return { get: function () { return Promise.resolve({ exists: false, data: function () { return null; } }); }, set: function () { return Promise.resolve(); } }; }
+  };
+
+  /* ---------- photos: kept in Google, shown from here ---------- */
+  var photos = {}, asking = {};
+  var MARK = "data:,fdp-";
+  window.__fdBlobUrl = function (id) { if (photos[id]) return photos[id]; getPhoto(id); return MARK + id; };
+  function getPhoto(id) {
+    if (asking[id] || photos[id] || !/^[a-f0-9]{32}$/.test(id)) return;
+    asking[id] = 1;
+    call("getPhoto", { id: id }).then(function (r) { photos[id] = r.data; fix(); }, function () { setTimeout(function () { delete asking[id]; }, 15000); });
+  }
+  function fix() {
+    document.querySelectorAll('img[src^="' + MARK + '"], a[href^="' + MARK + '"]').forEach(function (n) {
+      var attr = n.tagName === "A" ? "href" : "src", id = n.getAttribute(attr).slice(MARK.length);
+      if (photos[id]) n.setAttribute(attr, photos[id]); else getPhoto(id);
+    });
+  }
+  var fixQueued = false;
+  new MutationObserver(function () { if (fixQueued) return; fixQueued = true; requestAnimationFrame(function () { fixQueued = false; fix(); }); })
+    .observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src", "href"] });
+  function shrink(file) {
+    return new Promise(function (res, rej) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight, 1)), c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        res(c.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error("not a picture")); };
+      img.src = url;
+    });
+  }
+  var assets = {
+    upload: function (file) {
+      return shrink(file).then(function (data) {
+        return call("savePhoto", { data: data }).then(function (r) { photos[r.id] = data; return { id: r.id, url: data, sizeBytes: data.length, contentType: "image/jpeg" }; });
+      });
+    },
+    list: function () { return Promise.resolve({ assets: [], usage: {} }); },
+    delete: function () { return Promise.resolve(); }
+  };
+  var downloads = {
+    save: function (o) {
+      var blob = o.data instanceof Blob ? o.data : new Blob([o.data], { type: /\.ics$/i.test(o.filename) ? "text/calendar" : "application/octet-stream" });
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = o.filename || "file";
+      document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+      return Promise.resolve();
+    }
+  };
+  var user = { canEdit: function () { return Promise.resolve(true); }, isOwner: function () { return Promise.resolve(window.FD_ROLE === "owner"); }, can: function () { return Promise.resolve(true); } };
+  window.claude = {
+    use: function (name) {
+      if (name === "db") return ready.then(function () { return loaded ? db : null; });
+      if (name === "assets") return ready.then(function () { return loaded ? assets : null; });
+      if (name === "downloads") return Promise.resolve(downloads);
+      if (name === "user") return Promise.resolve(user);
+      return Promise.resolve(null);   // the Claude-only extras (smart reading, Gmail) are not in this version
+    }
+  };
+
+
+  /* ---------- reading a card photo: Google's free text reader (no AI) ---------- */
+  function blobToData(b) { return shrink(b); }
+  window.__fdReadCard = function (blobs) {
+    return Promise.all(blobs.slice(0, 2).map(blobToData)).then(function (imgs) {
+      return call("readCard", { images: imgs });
+    }).then(function (r) {
+      var c = r.card || {};
+      if (!c.issuer && !c.memberId && !c.group) { var e = new Error("unread"); e.code = "unread"; throw e; }
+      return c;
+    });
+  };
+
+  /* ---------- Ask Claude: requests answered by Elliot's Claude on his computer ---------- */
+  var KINDS = [
+    ["import", "Add from a photo or text", "A school sheet, flyer, receipt or message. Claude adds everything to the right sections."],
+    ["ask", "Ask about our schedule", "For example: what's coming up this week? When is the next day off?"],
+    ["order", "Find my order", "Say what you bought, even roughly (\"the wallet\"). Claude looks through the order emails."],
+    ["email", "Search my email", "For example: Camp Achim registration, or a teacher's name."]
+  ];
+  var askKind = "import", askPhotos = [], askList = null;
+  function escH(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function when(ms) { if (!ms) return ""; var d = new Date(ms); return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
+  function listHTML() {
+    if (!askList) return '<div class="empty">Loading…</div>';
+    if (!askList.length) return '<div class="empty">Nothing sent yet.</div>';
+    return askList.map(function (q) {
+      var k = KINDS.filter(function (x) { return x[0] === q.kind; })[0];
+      var st = q.status === "done" ? '<span class="chip" style="background:#E3F4EA;color:#1D6B3F">Answered</span>'
+        : q.status === "failed" ? '<span class="chip" style="background:#FBE7E6;color:#A12C22">Couldn\'t do it</span>'
+        : '<span class="chip" style="background:#FFF4D6;color:#7A5A00">Waiting for Claude</span>';
+      return '<div class="fdq"><div class="fdq-h"><b>' + escH(k ? k[1] : q.kind) + '</b>' + st + '<span class="fdq-t">' + escH(when(q.createdAt)) + '</span></div>' +
+        (q.text ? '<div class="fdq-x">' + escH(q.text) + '</div>' : '') + (q.photos && q.photos.length ? '<div class="fdq-x" style="color:var(--muted)">' + q.photos.length + ' photo' + (q.photos.length > 1 ? 's' : '') + '</div>' : '') +
+        (q.answer ? '<div class="fdq-a">' + escH(q.answer).replace(/\n/g, "<br>") + '</div>' : '') + '</div>';
+    }).join("");
+  }
+  function refreshList() {
+    call("requests").then(function (r) { askList = r.requests || []; var b = document.getElementById("fdAskList"); if (b) b.innerHTML = listHTML(); }, function () {});
+  }
+  setInterval(function () { if (document.getElementById("fdAskList") && document.visibilityState === "visible") refreshList(); }, 30000);
+  window.__fdAskView = function () {
+    setTimeout(refreshList, 0);
+    return '<div class="view-head"><div><h2>Ask Claude</h2><p>Send a photo, a question or a search. Elliot\'s Claude handles it and the answer shows here, usually within 15 minutes while his computer is on. New items appear in the app by themselves.</p></div></div>' +
+      '<style>.fdk{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.fdk button{text-align:left;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:4px}.fdk button span{font-size:13px;color:var(--muted)}.fdk button.on{border-color:var(--accent);background:var(--soft)}.fdq{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;background:var(--panel)}.fdq-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.fdq-t{color:var(--muted);font-size:12.5px;margin-left:auto}.fdq-a{background:var(--soft);border-radius:8px;padding:10px;line-height:1.5}.fdq-x{font-size:14px}#fdAskList{display:flex;flex-direction:column;gap:10px}.fdthumbs{display:flex;gap:8px;flex-wrap:wrap}.fdthumbs img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}</style>' +
+      '<section class="panel"><div class="panel-b" style="display:flex;flex-direction:column;gap:14px;padding:16px">' +
+      '<div class="fdk">' + KINDS.map(function (k) { return '<button type="button" data-fdkind="' + k[0] + '" class="' + (askKind === k[0] ? "on" : "") + '"><b>' + escH(k[1]) + '</b><span>' + escH(k[2]) + '</span></button>'; }).join("") + '</div>' +
+      '<div class="field"><label for="fdAskText">What do you need?</label><textarea id="fdAskText" rows="3" placeholder="Type here, or just add photos"></textarea></div>' +
+      '<div class="fdthumbs" id="fdAskThumbs"></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><label class="btn">Add photos<input type="file" id="fdAskPhotos" accept="image/*" multiple hidden></label>' +
+      '<button type="button" class="btn primary" id="fdAskSend">Send to Claude</button><span id="fdAskMsg" style="font-size:14px"></span></div>' +
+      '</div></section>' +
+      '<section style="display:flex;flex-direction:column;gap:10px"><h3 style="font-size:16px">Sent to Claude</h3><div id="fdAskList">' + listHTML() + '</div></section>';
+  };
+  function thumbs() { var t = document.getElementById("fdAskThumbs"); if (t) t.innerHTML = askPhotos.map(function (p) { return '<img alt="" src="' + p.url + '">'; }).join(""); }
+  document.addEventListener("click", function (e) {
+    var k = e.target.closest && e.target.closest("[data-fdkind]");
+    if (k) { askKind = k.getAttribute("data-fdkind"); document.querySelectorAll("[data-fdkind]").forEach(function (b) { b.classList.toggle("on", b === k); }); return; }
+    if (e.target.closest && e.target.closest("#fdAskSend")) {
+      var btn = document.getElementById("fdAskSend"), msgEl = document.getElementById("fdAskMsg"), text = (document.getElementById("fdAskText").value || "").trim();
+      if (!text && !askPhotos.length) { msgEl.textContent = "Type something or add a photo first."; return; }
+      btn.disabled = true; msgEl.textContent = askPhotos.length ? "Saving photos…" : "Sending…";
+      Promise.all(askPhotos.map(function (p) { return p.id ? Promise.resolve(p.id) : assets.upload(p.file).then(function (r) { p.id = r.id; return r.id; }); }))
+        .then(function (ids) { msgEl.textContent = "Sending…"; return call("ask", { kind: askKind, text: text, photos: ids }); })
+        .then(function () {
+          btn.disabled = false; askPhotos = []; thumbs(); document.getElementById("fdAskText").value = "";
+          msgEl.textContent = "Sent. Claude will answer here, usually within 15 minutes."; refreshList();
+        }, function () { btn.disabled = false; msgEl.textContent = "Couldn't send. Check your connection and try again."; });
+    }
+  });
+  document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "fdAskPhotos") {
+      [].slice.call(e.target.files || []).slice(0, 6 - askPhotos.length).forEach(function (f) { askPhotos.push({ file: f, url: URL.createObjectURL(f) }); });
+      e.target.value = ""; thumbs();
+    }
+  });
+
+  /* ---------- signing in ---------- */
+  var mode = "in", needCode = false;
+  function msg(t, err) { $("fdMsg").textContent = t || ""; $("fdMsg").className = "gmsg" + (err ? " err" : ""); }
+  function setMode(m) {
+    mode = m; needCode = false;
+    $("fdNameW").hidden = m !== "new"; $("fdPass2W").hidden = m !== "new"; $("fdPass2").value = "";
+    $("fdEmailL").firstChild.nodeValue = m === "new" ? "Email account" : "Email";
+    $("fdPassL").firstChild.nodeValue = m === "new" ? "Make a password" : "Password";
+$("fdCodeW").hidden = true; $("fdResend").hidden = true; $("fdCode").value = "";
+    $("fdPass").setAttribute("autocomplete", m === "new" ? "new-password" : "current-password");
+    $("fdGo").textContent = m === "new" ? "Create account" : "Sign in";
+    $("fdSwap").textContent = m === "new" ? "I already have an account" : "Create an account";
+    $("fdSub").textContent = m === "new" ? "Make your account: your name, your email, and a password you'll remember (at least 6 characters), typed twice." : "Sign in with your email and password.";
+    msg("");
+  }
+  function showGate(m, t) { $("fdGate").hidden = false; setMode(m); if (t) msg(t); }
+  function signedOut(t) { TOKEN = ""; ls(KEEP, null); loaded = false; showGate("in", t); }
+  window.__fdSignOut = function () { call("logout").catch(function () {}); signedOut("You're signed out."); };
+  $("fdSwap").addEventListener("click", function () {
+    if (mode === "in" && !JOIN) { msg("To make an account, open the invite link you were sent, then come back here.", true); return; }
+    setMode(mode === "new" ? "in" : "new");
+  });
+  $("fdResend").addEventListener("click", function () { needCode = false; $("fdCode").value = ""; submit(); });
+  $("fdForm").addEventListener("submit", function (e) { e.preventDefault(); submit(); });
+  function submit() {
+    var email = $("fdEmail").value.trim(), pass = $("fdPass").value, name = $("fdName").value.trim(), code = $("fdCode").value.replace(/\D/g, "");
+    if (mode === "new" && !name) return msg("Type your name.", true);
+    if (!email || !pass) return msg("Type your email and password.", true);
+    if (mode === "new" && pass.length < 6) return msg("Use at least 6 characters for the password.", true);
+    if (mode === "new" && pass !== $("fdPass2").value) return msg("The two passwords don't match. Type them again.", true);
+    if (needCode && code.length !== 6) return msg("Type the 6-digit code from your email.", true);
+    $("fdGo").disabled = true; msg(needCode ? "Checking the code…" : mode === "new" ? "Making your account…" : "Signing in…");
+    send({ action: mode === "new" ? "signup" : "login", email: email, pass: pass, name: name, join: JOIN, code: needCode ? code : "" }).then(function (r) {
+      $("fdGo").disabled = false;
+      TOKEN = r.token; ls(KEEP, TOKEN);
+      $("fdPass").value = ""; $("fdPass2").value = ""; $("fdGate").hidden = true;
+      if (!REMOTE && APP_URL) { try { window.top.location.href = APP_URL + "?k=" + TOKEN; return; } catch (e) {} }   // Google page: open this phone's own page, which remembers the sign-in
+      afterIn(true);
+    }, function (e) {
+      $("fdGo").disabled = false;
+      var c = e && e.error;
+      if (c === "code") {
+        needCode = true; $("fdCodeW").hidden = false; $("fdResend").hidden = false; $("fdGo").textContent = "Finish";
+        msg("We just emailed a 6-digit code to " + email + ". Type it here. You only do this once."); try { $("fdCode").focus(); } catch (x) {}
+        return;
+      }
+      msg(c === "badcode" ? "That code isn't right. Check the email and try again."
+        : c === "codeold" ? "That code has run out. Tap Send a new code."
+        : c === "codewait" ? "Too many codes were sent. Wait an hour and try again."
+        : c === "mail" ? "The code couldn't be emailed just now. Try again in a minute."
+        : c === "locked" ? "Too many wrong tries. Wait " + (e.minutes || 15) + " minutes and try again."
+        : c === "badlogin" ? "That email and password don't match. Check them and try again."
+        : c === "exists" ? "You already have an account. Tap \"I already have an account\" and sign in."
+        : c === "bademail" ? "That doesn't look like an email address."
+        : c === "short" ? "Use at least 6 characters for the password."
+        : c === "nojoin" ? "This link can't make a new account. Ask for a new invite link."
+        : c === "full" ? "No more accounts can be made right now."
+        : "Couldn't reach Google. Check your connection and try again.", true);
+    });
+  }
+  function afterIn(fresh) {
+    load().then(function () {
+      var standalone = window.navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+      if (fresh && !standalone && /iPhone|iPad|Android/i.test(navigator.userAgent)) $("fdHome").hidden = false;
+    });
+  }
+  try { var bi = document.getElementById("btnImport"); if (bi) { var tn = [].slice.call(bi.childNodes).filter(function (n) { return n.nodeType === 3 && /Smart import/.test(n.nodeValue); })[0]; if (tn) tn.nodeValue = tn.nodeValue.replace("Smart import", "Ask Claude"); } } catch (e) {}
+  $("fdHomeX").addEventListener("click", function () { $("fdHome").hidden = true; });
+  if (TOKEN) afterIn(!!URLKEY);
+  else showGate(JOIN ? "new" : "in", JOIN ? "" : "");
+  if (URLKEY) ls(KEEP, URLKEY);
+  // Clean the invite out of the address bar once it is remembered, so a home-screen icon is not saved with it.
+  if (REMOTE && params.get("join") && history.replaceState) history.replaceState(null, "", location.pathname);
+})();
+</script>
+
+<script>document.documentElement.setAttribute("data-theme","light");</script>
+<meta name="color-scheme" content="light">
+<style>
 /* Layout: file-cabinet app. Left rail of index tabs (sections), a working pane on the right; on phones the rail becomes a scrolling tab strip. */
 :root{
   --bg:#F3F5F7; --panel:#FFFFFF; --ink:#18212F; --muted:#5E6A7B; --line:#DDE2E8; --soft:#EBEFF3;
@@ -62,6 +391,12 @@ h1,h2,h3{font-family:var(--f-display);font-weight:700;text-wrap:balance;margin:0
 .nav .sw{width:10px;height:10px;border-radius:3px;flex:none}
 .nav .ct{margin-left:auto;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
 .rail-foot{margin-top:auto;font-size:12px;color:var(--muted);padding:0 8px}
+.tabbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:70;grid-template-columns:repeat(5,minmax(0,1fr));background:color-mix(in srgb,var(--panel) 96%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px max(8px, env(safe-area-inset-right,0px)) max(8px, env(safe-area-inset-bottom,0px)) max(8px, env(safe-area-inset-left,0px))}
+.tabbar a,.tabbar button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:600;text-decoration:none;cursor:pointer}
+.tabbar svg{width:23px;height:23px}
+.tabbar .on{color:var(--accent)}
+.tabbar .addb span.plus{width:46px;height:46px;margin-top:-14px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;box-shadow:0 4px 14px rgba(31,95,191,.35)}
+.tabbar .addb span.plus svg{width:24px;height:24px}
 
 .main{min-width:0;display:flex;flex-direction:column}
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding-block:12px;padding-left:24px;padding-right:max(24px, env(safe-area-inset-right,0px));display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -293,6 +628,9 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
 .share-opt:hover{border-color:var(--accent)}
 .share-opt.priv{border-color:var(--accent);background:var(--soft)}
 .share-more summary{cursor:pointer;color:var(--muted);font-size:13.5px}
+.linkrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.linkrow .linkname{font-weight:600;font-size:13.5px;min-width:100px}
+.linkrow input{flex:1 1 220px;min-width:0;font:inherit;font-size:13.5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink)}
 #invStatus{display:block;font-size:13.5px;line-height:1.5}
 .dlg-f{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--line);flex-wrap:wrap}
 .dlg-f .spacer{flex:1}
@@ -312,10 +650,19 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
 }
 @media (max-width:760px){
   .app{grid-template-columns:minmax(0,1fr)}
-  .rail{position:static;height:auto;flex-direction:row;align-items:center;gap:10px;padding-block:10px;padding-right:max(16px, env(safe-area-inset-right,0px));padding-left:max(16px, env(safe-area-inset-left,0px));border-right:0;border-bottom:1px solid var(--line);overflow-x:auto}
-  .brand h1,.nav-label,.rail-foot{display:none}
-  .nav{flex-direction:row;gap:4px}
-  .nav a{white-space:nowrap;padding:6px 10px}
+  .rail{position:static;height:auto;flex-direction:row;align-items:center;gap:10px;padding-block:12px 8px;padding-top:max(12px, env(safe-area-inset-top,0px));padding-right:max(16px, env(safe-area-inset-right,0px));padding-left:max(16px, env(safe-area-inset-left,0px));border-right:0;background:var(--bg)}
+  .brand h1{font-size:20px}
+  .nav,.rail-foot{display:none}
+  body.menu-open .nav{display:flex;position:fixed;inset:0;z-index:60;background:var(--bg);overflow-y:auto;padding:max(20px, env(safe-area-inset-top,0px)) 16px calc(90px + env(safe-area-inset-bottom,0px))}
+  body.menu-open .nav a{padding:13px 12px;font-size:16.5px;background:var(--panel);border:1px solid var(--line);margin-bottom:6px;border-radius:12px}
+  body.menu-open .nav a.on{background:color-mix(in srgb,var(--accent) var(--tint),var(--panel))}
+  body.menu-open .nav-label{padding:14px 4px 6px}
+  body.menu-open .nav::before{content:"Everything";font-family:var(--f-display);font-weight:700;font-size:24px;padding:0 4px 4px}
+  .top{top:0}
+  #btnImport,#btnAdd,.search kbd{display:none}
+  #btnShare{padding-inline:10px}
+  .view{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+  .tabbar{display:grid}
   .top{padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px))}
   .view{padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px))}
   .row{grid-template-columns:4px 56px minmax(0,1fr);}
@@ -352,259 +699,16 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
   </div>
 </div>
 
+<nav class="tabbar" id="tabbar" aria-label="Main">
+  <a href="#today" data-tab="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Today</a>
+  <a href="#calendar" data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+  <button type="button" class="addb" id="tabAdd" aria-label="Add"><span class="plus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>Add</button>
+  <a href="#wallet" data-tab="wallet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></svg>Wallet</a>
+  <button type="button" id="tabMore" data-tab="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>More</button>
+</nav>
 <dialog id="dlg"></dialog>
 <dialog id="lb"></dialog>
 <div class="toast" id="toast" hidden></div>
-
-<style>
-#fdGate{position:fixed;inset:0;z-index:1000;background:var(--bg,#F3F5F7);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:max(28px,env(safe-area-inset-top,0px)) 16px 28px}
-#fdGate[hidden]{display:none}
-#fdGate form{width:100%;max-width:400px;background:var(--panel,#fff);border:1px solid var(--line,#DDE2E8);border-radius:16px;padding:24px 20px;display:flex;flex-direction:column;gap:14px;margin-top:4vh;box-shadow:0 8px 30px rgba(20,30,50,.08)}
-#fdGate .gl{display:flex;align-items:center;gap:12px}
-#fdGate .gm{width:48px;height:48px;border-radius:12px;background:var(--accent,#1F5FBF);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;letter-spacing:.5px}
-#fdGate h2{margin:0;font-size:22px;color:var(--ink,#18212F)}
-#fdGate .gs{margin:0;color:var(--muted,#5E6A7B);font-size:14.5px;line-height:1.45}
-#fdGate label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:14px;color:var(--ink,#18212F)}
-#fdGate input{box-sizing:border-box;width:100%;font:inherit;font-size:16px;padding:12px;border-radius:10px;border:1px solid var(--line,#DDE2E8);background:var(--panel,#fff);color:var(--ink,#18212F);min-height:46px}
-#fdGate button{font:inherit;font-size:16px;min-height:48px;border-radius:10px;cursor:pointer;font-weight:700}
-#fdGate .go{background:var(--accent,#1F5FBF);color:#fff;border:0}
-#fdGate .go:disabled{opacity:.6}
-#fdGate .alt{background:transparent;border:1px solid var(--line,#DDE2E8);color:var(--ink,#18212F);font-weight:600}
-#fdGate .gmsg{margin:0;font-size:14.5px;line-height:1.45;color:var(--ink,#18212F);min-height:1em}
-#fdGate .gmsg.err{color:#B42318}
-#fdGate [hidden]{display:none!important}
-#fdHome{position:fixed;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom,0px));z-index:900;background:var(--ink,#18212F);color:var(--bg,#fff);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.4;display:flex;gap:10px;align-items:center}
-#fdHome[hidden]{display:none}
-#fdHome button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
-</style>
-<div id="fdGate" hidden>
-  <form id="fdForm" novalidate>
-    <div class="gl"><div class="gm" aria-hidden="true">FD</div><h2 id="fdTitle">Family Docket</h2></div>
-    <p class="gs" id="fdSub"></p>
-    <label id="fdNameW" hidden>Your name<input id="fdName" type="text" maxlength="60" autocomplete="name" placeholder="First and last name"></label>
-    <label id="fdEmailL">Email<input id="fdEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
-    <label id="fdPassL">Password<input id="fdPass" type="password" autocomplete="current-password"></label>
-    <label id="fdPass2W" hidden>Confirm password<input id="fdPass2" type="password" autocomplete="new-password"></label>
-    <label id="fdCodeW" hidden>Code from your email<input id="fdCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></label>
-    <p class="gmsg" id="fdMsg" role="status" aria-live="polite"></p>
-    <button type="submit" class="go" id="fdGo">Sign in</button>
-    <button type="button" class="alt" id="fdResend" hidden>Send a new code</button>
-    <button type="button" class="alt" id="fdSwap">Create an account</button>
-  </form>
-</div>
-<div id="fdHome" hidden><span style="flex:1">You're in. To open it like an app: tap <b>Share</b>, then <b>Add to Home Screen</b>.</span><button type="button" id="fdHomeX">OK</button></div>
-<script>
-/* Family Docket, Google version: connects the app to the family list kept in Google, and handles signing in.
-   It gives the app the same small set of tools the Claude version has (saved items, photos, saving a file). */
-(function () {
-  "use strict";
-  var REMOTE = "https://script.google.com/macros/s/AKfycbxgMcpcNNZ6Lg9RGopK_7vn7_Gu6uU64f29OJiraBbO8ZWn3zlL4X6wHXMbs36ReGWAEg/exec", URLKEY = "__DEVICE_KEY__", JOIN = "__JOIN_KEY__", APP_URL = "__APP_URL__";
-  function real(v) { return /^__[A-Z_]+__$/.test(v) ? "" : v; }
-  REMOTE = real(REMOTE); URLKEY = real(URLKEY).replace(/[^a-f0-9]/g, ""); JOIN = real(JOIN); APP_URL = real(APP_URL);
-  var params = new URLSearchParams(location.search);
-  if (!JOIN) JOIN = (params.get("join") || "").replace(/[^a-z0-9]/g, "");
-  var KEEP = "fd-key", JK = "fd-join";
-  function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k) || ""; if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return ""; } }
-  if (JOIN) ls(JK, JOIN); else JOIN = ls(JK);
-  var TOKEN = URLKEY || ls(KEEP);
-  window.FD_GOOGLE = true;
-  var $ = function (id) { return document.getElementById(id); };
-
-  /* ---------- talking to Google ---------- */
-  function send(req) {
-    return new Promise(function (res, rej) {
-      var done = function (r) { r && r.ok ? res(r) : rej(r || { error: "failed" }); };
-      if (REMOTE) {
-        fetch(REMOTE, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(req), redirect: "follow" })
-          .then(function (r) { return r.json(); }).then(done, function () { rej({ error: "network" }); });
-      } else if (window.google && google.script && google.script.run) {
-        google.script.run.withSuccessHandler(done).withFailureHandler(function () { rej({ error: "network" }); }).api(req);
-      } else rej({ error: "network" });
-    });
-  }
-  function call(action, extra) { return send(Object.assign({ action: action, token: TOKEN }, extra || {})); }
-
-  /* ---------- the family list, kept here and refreshed from Google ---------- */
-  var cache = {}, listeners = [], loaded = false, pending = 0, ready, readyRes;
-  ready = new Promise(function (r) { readyRes = r; });
-  function snap(col) {
-    var docs = Object.keys(cache).filter(function (id) { return cache[id].col === col; })
-      .map(function (id) { var d = cache[id].data; return { id: id, data: function () { return d; } }; });
-    return { docs: docs, metadata: { fromCache: false } };
-  }
-  function fire() { listeners.forEach(function (l) { try { l.cb(snap(l.col)); } catch (e) {} }); }
-  function take(r) {
-    var c = {}; (r.items || []).forEach(function (x) { if (x && x.data && x.data.id) c[x.data.id] = { col: x.col, data: x.data }; });
-    cache = c; window.FD_LINKS = r.links || null; window.FD_ME = (r.me && r.me.email) || ""; window.FD_ROLE = (r.me && r.me.role) || "";
-  }
-  function load(quiet) {
-    return call("load").then(function (r) {
-      if (pending) return;        // a save is on its way; the next refresh picks it up
-      take(r); loaded = true; fire(); readyRes(true);
-    }, function (e) { if (e && e.error === "signin") signedOut("Please sign in again."); else if (!quiet) readyRes(true); });
-  }
-  setInterval(function () { if (loaded && document.visibilityState === "visible") load(true); }, 45000);
-  document.addEventListener("visibilitychange", function () { if (loaded && document.visibilityState === "visible") load(true); });
-  var chain = Promise.resolve();
-  function write(req, apply) {
-    apply(); fire(); pending++;
-    var p = chain.then(function () { return call(req.action, req); });
-    chain = p.then(function () {}, function () {});
-    return p.then(function () { pending--; }, function (e) {
-      pending--;
-      if (e && e.error === "signin") { signedOut("Please sign in again."); }
-      var err = new Error("save failed"); err.code = e && e.error === "denied" ? "invalid_argument" : "unavailable"; throw err;
-    });
-  }
-  var db = {
-    collection: function (col) {
-      return {
-        doc: function (id) {
-          return {
-            set: function (d) { return write({ action: "saveItem", col: col, id: id, data: d }, function () { cache[id] = { col: col, data: Object.assign({}, d, { id: id }) }; }); },
-            delete: function () { return write({ action: "deleteItem", col: col, id: id }, function () { if (cache[id] && cache[id].col === col) delete cache[id]; }); },
-            get: function () { var x = cache[id]; return Promise.resolve({ exists: !!(x && x.col === col), data: function () { return x ? x.data : null; } }); }
-          };
-        },
-        onSnapshot: function (cb) { var l = { col: col, cb: cb }; listeners.push(l); if (loaded) setTimeout(function () { cb(snap(col)); }, 0); return function () { listeners = listeners.filter(function (x) { return x !== l; }); }; }
-      };
-    },
-    doc: function () { return { get: function () { return Promise.resolve({ exists: false, data: function () { return null; } }); }, set: function () { return Promise.resolve(); } }; }
-  };
-
-  /* ---------- photos: kept in Google, shown from here ---------- */
-  var photos = {}, asking = {};
-  var MARK = "data:,fdp-";
-  window.__fdBlobUrl = function (id) { if (photos[id]) return photos[id]; getPhoto(id); return MARK + id; };
-  function getPhoto(id) {
-    if (asking[id] || photos[id] || !/^[a-f0-9]{32}$/.test(id)) return;
-    asking[id] = 1;
-    call("getPhoto", { id: id }).then(function (r) { photos[id] = r.data; fix(); }, function () { setTimeout(function () { delete asking[id]; }, 15000); });
-  }
-  function fix() {
-    document.querySelectorAll('img[src^="' + MARK + '"], a[href^="' + MARK + '"]').forEach(function (n) {
-      var attr = n.tagName === "A" ? "href" : "src", id = n.getAttribute(attr).slice(MARK.length);
-      if (photos[id]) n.setAttribute(attr, photos[id]); else getPhoto(id);
-    });
-  }
-  var fixQueued = false;
-  new MutationObserver(function () { if (fixQueued) return; fixQueued = true; requestAnimationFrame(function () { fixQueued = false; fix(); }); })
-    .observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src", "href"] });
-  function shrink(file) {
-    return new Promise(function (res, rej) {
-      var url = URL.createObjectURL(file), img = new Image();
-      img.onload = function () {
-        var k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight, 1)), c = document.createElement("canvas");
-        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
-        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
-        res(c.toDataURL("image/jpeg", 0.82));
-      };
-      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error("not a picture")); };
-      img.src = url;
-    });
-  }
-  var assets = {
-    upload: function (file) {
-      return shrink(file).then(function (data) {
-        return call("savePhoto", { data: data }).then(function (r) { photos[r.id] = data; return { id: r.id, url: data, sizeBytes: data.length, contentType: "image/jpeg" }; });
-      });
-    },
-    list: function () { return Promise.resolve({ assets: [], usage: {} }); },
-    delete: function () { return Promise.resolve(); }
-  };
-  var downloads = {
-    save: function (o) {
-      var blob = o.data instanceof Blob ? o.data : new Blob([o.data], { type: /\.ics$/i.test(o.filename) ? "text/calendar" : "application/octet-stream" });
-      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = o.filename || "file";
-      document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-      return Promise.resolve();
-    }
-  };
-  var user = { canEdit: function () { return Promise.resolve(true); }, isOwner: function () { return Promise.resolve(window.FD_ROLE === "owner"); }, can: function () { return Promise.resolve(true); } };
-  window.claude = {
-    use: function (name) {
-      if (name === "db") return ready.then(function () { return loaded ? db : null; });
-      if (name === "assets") return ready.then(function () { return loaded ? assets : null; });
-      if (name === "downloads") return Promise.resolve(downloads);
-      if (name === "user") return Promise.resolve(user);
-      return Promise.resolve(null);   // the Claude-only extras (smart reading, Gmail) are not in this version
-    }
-  };
-
-  /* ---------- signing in ---------- */
-  var mode = "in", needCode = false;
-  function msg(t, err) { $("fdMsg").textContent = t || ""; $("fdMsg").className = "gmsg" + (err ? " err" : ""); }
-  function setMode(m) {
-    mode = m; needCode = false;
-    $("fdNameW").hidden = m !== "new"; $("fdPass2W").hidden = m !== "new"; $("fdPass2").value = "";
-    $("fdEmailL").firstChild.nodeValue = m === "new" ? "Email account" : "Email";
-    $("fdPassL").firstChild.nodeValue = m === "new" ? "Make a password" : "Password";
-$("fdCodeW").hidden = true; $("fdResend").hidden = true; $("fdCode").value = "";
-    $("fdPass").setAttribute("autocomplete", m === "new" ? "new-password" : "current-password");
-    $("fdGo").textContent = m === "new" ? "Create account" : "Sign in";
-    $("fdSwap").textContent = m === "new" ? "I already have an account" : "Create an account";
-    $("fdSub").textContent = m === "new" ? "Make your account: your name, your email, and a password you'll remember (at least 6 characters), typed twice." : "Sign in with your email and password.";
-    msg("");
-  }
-  function showGate(m, t) { $("fdGate").hidden = false; setMode(m); if (t) msg(t); }
-  function signedOut(t) { TOKEN = ""; ls(KEEP, null); loaded = false; showGate("in", t); }
-  window.__fdSignOut = function () { call("logout").catch(function () {}); signedOut("You're signed out."); };
-  $("fdSwap").addEventListener("click", function () {
-    if (mode === "in" && !JOIN) { msg("To make an account, open the invite link you were sent, then come back here.", true); return; }
-    setMode(mode === "new" ? "in" : "new");
-  });
-  $("fdResend").addEventListener("click", function () { needCode = false; $("fdCode").value = ""; submit(); });
-  $("fdForm").addEventListener("submit", function (e) { e.preventDefault(); submit(); });
-  function submit() {
-    var email = $("fdEmail").value.trim(), pass = $("fdPass").value, name = $("fdName").value.trim(), code = $("fdCode").value.replace(/\D/g, "");
-    if (mode === "new" && !name) return msg("Type your name.", true);
-    if (!email || !pass) return msg("Type your email and password.", true);
-    if (mode === "new" && pass.length < 6) return msg("Use at least 6 characters for the password.", true);
-    if (mode === "new" && pass !== $("fdPass2").value) return msg("The two passwords don't match. Type them again.", true);
-    if (needCode && code.length !== 6) return msg("Type the 6-digit code from your email.", true);
-    $("fdGo").disabled = true; msg(needCode ? "Checking the code…" : mode === "new" ? "Making your account…" : "Signing in…");
-    send({ action: mode === "new" ? "signup" : "login", email: email, pass: pass, name: name, join: JOIN, code: needCode ? code : "" }).then(function (r) {
-      $("fdGo").disabled = false;
-      TOKEN = r.token; ls(KEEP, TOKEN);
-      $("fdPass").value = ""; $("fdPass2").value = ""; $("fdGate").hidden = true;
-      if (!REMOTE && APP_URL) { try { window.top.location.href = APP_URL + "?k=" + TOKEN; return; } catch (e) {} }   // Google page: open this phone's own page, which remembers the sign-in
-      afterIn(true);
-    }, function (e) {
-      $("fdGo").disabled = false;
-      var c = e && e.error;
-      if (c === "code") {
-        needCode = true; $("fdCodeW").hidden = false; $("fdResend").hidden = false; $("fdGo").textContent = "Finish";
-        msg("We just emailed a 6-digit code to " + email + ". Type it here. You only do this once."); try { $("fdCode").focus(); } catch (x) {}
-        return;
-      }
-      msg(c === "badcode" ? "That code isn't right. Check the email and try again."
-        : c === "codeold" ? "That code has run out. Tap Send a new code."
-        : c === "codewait" ? "Too many codes were sent. Wait an hour and try again."
-        : c === "mail" ? "The code couldn't be emailed just now. Try again in a minute."
-        : c === "locked" ? "Too many wrong tries. Wait " + (e.minutes || 15) + " minutes and try again."
-        : c === "badlogin" ? "That email and password don't match. Check them and try again."
-        : c === "exists" ? "You already have an account. Tap \"I already have an account\" and sign in."
-        : c === "bademail" ? "That doesn't look like an email address."
-        : c === "short" ? "Use at least 6 characters for the password."
-        : c === "nojoin" ? "This link can't make a new account. Ask for a new invite link."
-        : c === "full" ? "No more accounts can be made right now."
-        : "Couldn't reach Google. Check your connection and try again.", true);
-    });
-  }
-  function afterIn(fresh) {
-    load().then(function () {
-      var standalone = window.navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
-      if (fresh && !standalone && /iPhone|iPad|Android/i.test(navigator.userAgent)) $("fdHome").hidden = false;
-    });
-  }
-  $("fdHomeX").addEventListener("click", function () { $("fdHome").hidden = true; });
-  if (TOKEN) afterIn(!!URLKEY);
-  else showGate(JOIN ? "new" : "in", JOIN ? "" : "");
-  if (URLKEY) ls(KEEP, URLKEY);
-  // Clean the invite out of the address bar once it is remembered, so a home-screen icon is not saved with it.
-  if (REMOTE && params.get("join") && history.replaceState) history.replaceState(null, "", location.pathname);
-})();
-</script>
 
 <script>
 (() => {
@@ -810,11 +914,12 @@ function renderNav(){
   const t=iso(today());
   const count = cat => items.filter(i=>i.cat===cat && !isDone(i) && (isOpenList(cat) || !i.date || (i.endDate||i.date)>=t)).length;
   const link=(v,label,sw,ct)=>`<a href="#${v}" class="${state.view===v?"on":""}">${sw?`<span class="sw" style="background:${sw}"></span>`:icon(v)}${esc(label)}${ct!=null?`<span class="ct">${ct}</span>`:""}</a>`;
+  document.querySelectorAll("#tabbar [data-tab]").forEach(a=>{ const v=a.dataset.tab; a.classList.toggle("on", v==="more" ? document.body.classList.contains("menu-open") || !["today","calendar","wallet"].includes(state.view) : v===state.view && !document.body.classList.contains("menu-open")); });
   $("#nav").innerHTML =
     link("today","Today") + link("calendar","Calendar") +
     `<div class="nav-label">Sections</div>` +
     Object.entries(CATS).map(([k,c])=>link(k,c.label,`var(${c.color})`,count(k))).join("") +
-    `<div class="nav-label">Tools</div>` + link("import","Smart import") + link("wallet","Wallet") + link("photos","Photos");
+    `<div class="nav-label">Tools</div>` + link("import",window.FD_GOOGLE?"Ask Claude":"Smart import") + link("wallet","Wallet") + link("photos","Photos");
   const note = state.mode==="db" ? (window.FD_GOOGLE?"Saved to the family list.":state.readOnly?"View only":"Saved to your account. Syncs across your devices.") : state.mode==="local" ? "Saved in this browser only." : "Loading…";
   $("#syncNote").textContent = note;
 }
@@ -1190,6 +1295,9 @@ function inviteText(kind){
   return `${greeting()}\n\nI shared our family organizer, Family Docket, with you. ${what}\n\nOpen it here:\n${APP_LINK}\n\nSign in with your own email and type in the code Claude emails you. It stays signed in after that.\n\nTip: on iPhone, open the link in Safari, tap Share, then Add to Home Screen, so it opens like an app.`;
 }
 const shareLink = kind => (window.FD_LINKS && window.FD_LINKS[kind]) || window.FD_LINKS?.regular || APP_LINK;
+const shareRows = () => window.FD_GOOGLE
+  ? [["regular","Plain link",shareLink("regular")], ...(window.FD_LINKS&&window.FD_LINKS.private?[["private","🔒 Private link",window.FD_LINKS.private]]:[])]
+  : [["regular","Link",APP_LINK]];
 const INVITE_SUBJECT = kind => kind==="private" ? "Family Docket (full access)" : "Our family organizer, Family Docket";
 function openShare(){
   const lb=$("#lb");
@@ -1202,6 +1310,9 @@ function openShare(){
         ${window.FD_GOOGLE&&!(window.FD_LINKS&&window.FD_LINKS.private)?"":`<button type="button" class="share-opt priv" data-send="private"><b>🔒 Send private link</b><span>Everything, including Wallet cards and Payments. They can add and change things.</span></button>`}
       </div>
       <div class="status" id="invStatus" aria-live="polite"></div>
+      <div class="field"><label>Or copy a link and send it yourself</label>
+        ${shareRows().map(([k,label,url])=>`<div class="linkrow"><span class="linkname">${esc(label)}</span><input type="text" readonly value="${esc(url)}" aria-label="${esc(label)}" onclick="this.select()"><button type="button" class="btn sm" data-cpone="${k}">Copy</button></div>`).join("")}
+      </div>
       <details class="share-more"><summary>Other ways to send</summary>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="btn sm" data-cplink>Copy link</button><button type="button" class="btn sm" data-cpmsg="regular">Copy message (regular)</button>${window.FD_GOOGLE&&!(window.FD_LINKS&&window.FD_LINKS.private)?"":`<button type="button" class="btn sm" data-cpmsg="private">Copy message (private)</button>`}</div>
       </details>
@@ -1212,6 +1323,7 @@ function openShare(){
     : `<b>One last step:</b> tap Claude's own <b>Share</b> button at the top of the screen, add the same email and choose <b>Can view</b>.`;
   lb.onclick=async e=>{ if(e.target===lb){ lb.close(); return; } const b=e.target.closest("button"); if(!b) return;
     if(b.hasAttribute("data-lbx")) lb.close();
+    if(b.dataset.cpone){ const row=shareRows().find(r=>r[0]===b.dataset.cpone); if(row) copyText(row[2]).then(ok=>{ b.textContent=ok?"Copied":"Hold to copy"; setTimeout(()=>{ b.textContent="Copy"; },2000); if(!ok){ const i=b.parentNode.querySelector("input"); if(i){ i.focus(); i.select(); } } }); return; }
     if(b.hasAttribute("data-signout")){ lb.close(); window.__fdSignOut(); return; }
     if(b.hasAttribute("data-cplink")) copyText(shareLink("regular")).then(ok=>toast(ok?"Link copied":APP_LINK));
     if(b.dataset.cpmsg) copyText(inviteText(b.dataset.cpmsg)).then(ok=>toast(ok?"Message copied. Paste it in a text or WhatsApp.":"Couldn't copy. Use Copy link instead."));
@@ -1434,7 +1546,7 @@ function walletView(){
   const grid=list=>`<div class="wgrid">${list.map(c=>`<button class="wslot" data-show="${esc(c.id)}" aria-label="Show ${esc(c.title||"card")}">${dcardHTML(c,false)}<span class="wcap"><b style="color:var(--ink)">${esc(c.title||"")}</b><span>${esc(c.person||"")}</span></span></button>`).join("")}</div>`;
   return `<div class="view-head"><div><h2>Wallet</h2><p>Your cards as digital cards. Tap one to show it full screen.</p></div>
     ${state.readOnly?"":`<button class="btn primary" data-newcard>Add a card</button>`}</div>
-    <p class="help">For insurance, ID and membership cards, take a photo of the front and back. Claude reads it and builds the digital card, and the photo stays saved as a backup. Credit and debit cards are built from the bank name, network and last 4 digits only, so no photo of a credit card is needed.</p>
+    <p class="help">For insurance, ID and membership cards, take a photo of the front and back. ${window.FD_GOOGLE?"The app reads it":"Claude reads it"} and builds the digital card, and the photo stays saved as a backup. Credit and debit cards are built from the bank name, network and last 4 digits only, so no photo of a credit card is needed.</p>
     ${cards.length?"":`<div class="panel"><div class="empty">No cards yet. Press <b>Add a card</b> to make your first one.</div></div>`}
     ${ids.length?`<section style="display:flex;flex-direction:column;gap:12px"><h3 style="font-size:16px">Insurance, IDs and memberships</h3>${grid(ids)}</section>`:""}
     ${pays.length?`<section style="display:flex;flex-direction:column;gap:12px"><h3 style="font-size:16px">Credit and debit cards</h3>${grid(pays)}</section>`:""}`;
@@ -1458,6 +1570,7 @@ function showDigital(c, side){
   if(!lb.open) lb.showModal();
 }
 async function readCardPhotos(blobs){
+  if(window.__fdReadCard) return window.__fdReadCard(blobs);   // Google version: Google's free text reader, no AI
   const x = await state.sample.json(`These are photos of the front${blobs.length>1?" and back":""} of a card from someone's wallet (insurance, pharmacy, ID or membership card).
 Read it and reply with only a JSON object:
 {"kind": one of "health","dental","vision","pharmacy","membership","id","other",
@@ -1495,7 +1608,7 @@ function cardEditor(c){
         <p class="sub" style="margin:0;color:var(--muted);font-size:12.5px">For your safety the card keeps only the last 4 digits. Pay with the real card in your bank app, Apple Pay or Google Pay.</p>`
       : `
         <div class="slotpick">${slot("front","Front")}${slot("back","Back")}</div>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${state.sample&&(ed.front||ed.back)?`<button type="button" class="btn sm" data-reread>Read the card again</button>`:""}<span class="status" id="cStatus"></span></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${(state.sample||window.__fdReadCard)&&(ed.front||ed.back)?`<button type="button" class="btn sm" data-reread>Read the card again</button>`:""}<span class="status" id="cStatus"></span></div>
         <div class="fields">
           <div class="field"><label for="c_title">Card name</label><input ${val("c_title",ed.title)} placeholder="e.g. Health insurance"></div>
           <div class="field"><label for="c_kind">Type</label><select id="c_kind">${Object.entries(CARD_KINDS).map(([k,v])=>`<option value="${k}" ${ed.kind===k?"selected":""}>${v}</option>`).join("")}</select></div>
@@ -1519,8 +1632,8 @@ function cardEditor(c){
   };
   const preview=()=>{ const p=d.querySelector("#cPrev"); if(p) p.innerHTML=dcardHTML(ed,false); };
   const autoRead=async()=>{
-    if(!state.sample) return;
-    const st=d.querySelector("#cStatus"); if(st) st.innerHTML=`<span class="spin"></span>Claude is reading the card…`;
+    if(!state.sample && !window.__fdReadCard) return;
+    const st=d.querySelector("#cStatus"); if(st) st.innerHTML=`<span class="spin"></span>${window.FD_GOOGLE?"Reading the card":"Claude is reading the card"}…`;
     try{
       let blobs=[files.front, files.back].filter(Boolean);
       if(!blobs.length){ for(const s of ["front","back"]) if(ed[s]){ try{ blobs.push(await fetch(blobUrl(ed[s])).then(r=>r.blob())); }catch(e){} } }
@@ -1550,7 +1663,7 @@ function cardEditor(c){
     const side=t.dataset.up, file=t.files[0]; files[side]=file;
     const st=d.querySelector("#cStatus"); if(st) st.innerHTML=`<span class="spin"></span>Saving photo…`;
     const ids=await uploadPhotos([file]); if(ids[0]) ed[side]=ids[0]; draw();
-    if(state.sample) autoRead(); };
+    if(state.sample || window.__fdReadCard) autoRead(); };
   d.onkeydown=null;
   d.onsubmit=e=>{ e.preventDefault(); collect();
     if(!ed.title) ed.title = ed.ctype==="payment" ? "Card" : (ed.issuer || "Card");
@@ -1861,6 +1974,7 @@ Volunteer slots 8:00-8:45 and 8:45-9:30. Please bring 2 dozen nut-free cookies, 
 Class trip to the Science Center is Jan 14. Trip fee $25, pay the PTA treasurer by Zelle by Dec 10. Permission slip due Dec 10.`;
 
 function viewImport(){
+  if(window.FD_GOOGLE && window.__fdAskView) return window.__fdAskView();   // Google version: requests go to Elliot's Claude
   const can = !!state.sample;
   return `<div class="view-head"><div><h2>Smart import</h2><p>Add a photo of the school's full-year sheet, a flyer or a receipt, or paste the text of an email or WhatsApp message. Claude reads it and sorts everything into the right sections. You check the list before anything is saved, and the original photo is kept with the items.</p></div></div>
   ${state.previewFrom==="email"?`<div class="banner"><span>These came from your Gmail. Untick anything you don't want, then press Add.</span></div>`:""}
@@ -2302,6 +2416,10 @@ document.addEventListener("drop", e=>{ const d=e.target.closest?.("#drop"); if(!
   const files=[...(e.dataTransfer?.files||[])]; if(files.length && state.imgOK) addImages(files);
   else { const txt=e.dataTransfer?.getData("text"); if(txt){ $("#impText").value=txt; } } });
 $("#btnAdd").onclick=()=>openQuickAdd();
+$("#tabAdd").onclick=()=>{ document.body.classList.remove("menu-open"); openQuickAdd(); };
+$("#tabMore").onclick=()=>{ document.body.classList.toggle("menu-open"); renderNav(); };
+$("#nav").addEventListener("click", e=>{ if(e.target.closest("a")) document.body.classList.remove("menu-open"); });
+document.querySelectorAll("#tabbar a").forEach(a=>a.addEventListener("click", ()=>document.body.classList.remove("menu-open")));
 $("#btnShare").onclick=()=>openShare();
 // Tapping the name goes home and refreshes: clears search and filters, redraws with the latest saved items.
 $("#brandHome").onclick=e=>{ e.preventDefault();
