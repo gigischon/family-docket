@@ -382,8 +382,9 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
     <div class="gl"><div class="gm" aria-hidden="true">FD</div><h2 id="fdTitle">Family Docket</h2></div>
     <p class="gs" id="fdSub"></p>
     <label id="fdNameW" hidden>Your name<input id="fdName" type="text" maxlength="60" autocomplete="name" placeholder="First and last name"></label>
-    <label>Email<input id="fdEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
-    <label>Password<input id="fdPass" type="password" autocomplete="current-password"></label>
+    <label id="fdEmailL">Email<input id="fdEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+    <label id="fdPassL">Password<input id="fdPass" type="password" autocomplete="current-password"></label>
+    <label id="fdPass2W" hidden>Confirm password<input id="fdPass2" type="password" autocomplete="new-password"></label>
     <label id="fdCodeW" hidden>Code from your email<input id="fdCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></label>
     <p class="gmsg" id="fdMsg" role="status" aria-live="polite"></p>
     <button type="submit" class="go" id="fdGo">Sign in</button>
@@ -535,11 +536,14 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
   function msg(t, err) { $("fdMsg").textContent = t || ""; $("fdMsg").className = "gmsg" + (err ? " err" : ""); }
   function setMode(m) {
     mode = m; needCode = false;
-    $("fdNameW").hidden = m !== "new"; $("fdCodeW").hidden = true; $("fdResend").hidden = true; $("fdCode").value = "";
+    $("fdNameW").hidden = m !== "new"; $("fdPass2W").hidden = m !== "new"; $("fdPass2").value = "";
+    $("fdEmailL").firstChild.nodeValue = m === "new" ? "Email account" : "Email";
+    $("fdPassL").firstChild.nodeValue = m === "new" ? "Make a password" : "Password";
+$("fdCodeW").hidden = true; $("fdResend").hidden = true; $("fdCode").value = "";
     $("fdPass").setAttribute("autocomplete", m === "new" ? "new-password" : "current-password");
     $("fdGo").textContent = m === "new" ? "Create account" : "Sign in";
     $("fdSwap").textContent = m === "new" ? "I already have an account" : "Create an account";
-    $("fdSub").textContent = m === "new" ? "Type your name, your email and a password you'll remember (at least 6 characters)." : "Sign in with your email and password.";
+    $("fdSub").textContent = m === "new" ? "Make your account: your name, your email, and a password you'll remember (at least 6 characters), typed twice." : "Sign in with your email and password.";
     msg("");
   }
   function showGate(m, t) { $("fdGate").hidden = false; setMode(m); if (t) msg(t); }
@@ -556,12 +560,13 @@ dialog::backdrop{background:rgba(10,15,25,.45)}
     if (mode === "new" && !name) return msg("Type your name.", true);
     if (!email || !pass) return msg("Type your email and password.", true);
     if (mode === "new" && pass.length < 6) return msg("Use at least 6 characters for the password.", true);
+    if (mode === "new" && pass !== $("fdPass2").value) return msg("The two passwords don't match. Type them again.", true);
     if (needCode && code.length !== 6) return msg("Type the 6-digit code from your email.", true);
     $("fdGo").disabled = true; msg(needCode ? "Checking the code…" : mode === "new" ? "Making your account…" : "Signing in…");
     send({ action: mode === "new" ? "signup" : "login", email: email, pass: pass, name: name, join: JOIN, code: needCode ? code : "" }).then(function (r) {
       $("fdGo").disabled = false;
       TOKEN = r.token; ls(KEEP, TOKEN);
-      $("fdPass").value = ""; $("fdGate").hidden = true;
+      $("fdPass").value = ""; $("fdPass2").value = ""; $("fdGate").hidden = true;
       if (!REMOTE && APP_URL) { try { window.top.location.href = APP_URL + "?k=" + TOKEN; return; } catch (e) {} }   // Google page: open this phone's own page, which remembers the sign-in
       afterIn(true);
     }, function (e) {
